@@ -87,6 +87,9 @@ class Node:
 topic_trees = dict()
 # dictionary of all the nodes, key as UID of the topic, and value equal to Node object
 topic_total_nodes = dict()
+# dictionary of all contents belonging to a channel of a tree, key as UID of the channel,
+# value equal to a list of content UIDs.
+topic_trees_contents = dict()
 
 def initialize_topic_trees():
     # loop through levels
@@ -114,4 +117,36 @@ def initialize_topic_trees():
                 parent_node = topic_total_nodes[parent]
                 parent_node.children.append(node)
                 node.parent = parent_node
+
+def initialize_topic_tree_contents():
+    # first consider the topics subtable with only rows where has_content is True.
+    topic_and_contents = topics.loc[topics.has_content == True]\
+        .merge(correlations, left_on="id", right_on="topic_id", how="inner")
+    # then perform an inner join operation to obtain the table with corresponding content ids.
+
+    # we only need the channel and content ids
+    channel_and_contents = topic_and_contents[["channel", "content_ids"]]
+
+    global topic_trees_contents
+    topic_trees_contents = dict()
+
+    # loop through each row and aggregate them together
+    for idx in channel_and_contents.index:
+        # find the string value in the "content_ids" column
+        content_ids = channel_and_contents.loc[idx, "content_ids"]
+        # find the channel UID in the "channel" column
+        channel = channel_and_contents.loc[idx, "channel"]
+        # if channel not already in topic_trees_contents, initialize it
+        if not channel in topic_trees_contents:
+            topic_trees_contents[channel] = []
+        # loop through the content_id and add it to the array
+        for content_id in content_ids.split():
+            topic_trees_contents[channel].append(content_id)
+
+    # add empty arrays
+    for channel in topic_trees_id_list:
+        if channel not in topic_trees_contents:
+            topic_trees_contents[channel] = []
+
 initialize_topic_trees()
+initialize_topic_tree_contents()
