@@ -121,7 +121,7 @@ def get_selected_node_on_tree():
 # renderer in the left
 node_track_pos = 0
 class RendererNode:
-    def __init__(self, title, description, channel, category, level, language, has_content, uid, display_id):
+    def __init__(self, title, description, channel, category, level, language, has_content, uid, display_id, translate = ""):
         self.parent = None
         self.children = []
         self.title = title
@@ -132,6 +132,7 @@ class RendererNode:
         self.language = language
         self.has_content = has_content
         self.uid = uid
+        self.translate = translate
 
         self.expanded = False
         self.occupy_space_last_compute = 0
@@ -205,7 +206,7 @@ node_copier_idx = -1
 def node_copier(node):
     global node_copier_idx
     node_copier_idx += 1
-    return RendererNode(node.title, node.description, node.channel, node.category, node.level, node.language, node.has_content, node.uid, node_copier_idx)
+    return RendererNode(node.title, node.description, node.channel, node.category, node.level, node.language, node.has_content, node.uid, node_copier_idx, translate = node.translate)
 
 class LeftRenderer:
     def __init__(self):
@@ -325,7 +326,7 @@ class LeftRenderer:
                     contents = data.correlations.loc[node.uid]["content_ids"]
                     sframe = data.contents.loc[contents.split(" ")]
 
-                    display_data_frame(sframe)
+                    display_data_frame(sframe, str(node.title) + " lang: " + str(node.language) + " uid: " + str(node.uid) + " translate: " + str(node.translate))
 
     def mouse_drag(self, evt):
         dx = evt.x - self.last_mouse_x
@@ -395,7 +396,7 @@ def select_tree(tree_id):
             tree_structure_view.insert(parent="", index="end", id=current_node.uid, text=current_node.title + "  [" + str(idx) + "]")
         else:
             tree_structure_view.insert(parent=current_node.parent.uid, index="end", id=current_node.uid,
-                                       text=current_node.title + "  [" + str(idx) + "]")
+                                       text=str(current_node.title) + "  [" + str(idx) + "]")
         idx += 1
         for child_node in current_node.children:
             recursion(child_node)
@@ -457,8 +458,9 @@ def on_search_click():
 
 search_btn.configure(command = on_search_click)
 
-def display_data_frame(dframe):
+def display_data_frame(dframe, title):
     small_window = tkinter.Toplevel(window)
+    small_window.title(title)
     # initiate contents
     tree_structure_view = ttk.Treeview(small_window, columns = tuple(dframe.columns))
     horizontal_scroll = ttk.Scrollbar(small_window, orient="horizontal")

@@ -4,21 +4,46 @@ Python file to manage / load the data fram the csv files. Defines classes such a
 
 
 import pandas as pd
+import argostranslate.package
+import argostranslate.translate
 
-contents = pd.read_csv("data/content.csv", index_col = 0)
+contents = pd.read_csv("data/content_translate.csv", index_col = 0)
 correlations = pd.read_csv("data/correlations.csv", index_col = 0)
-topics = pd.read_csv("data/topics.csv", index_col = 0)
+topics = pd.read_csv("data/topics_translate.csv", index_col = 0)
+
+# translate the non-english data
+def translate_topics(x):
+    srs = x.copy()
+    if type(srs["title"]) == float:
+        srs["title_translate"] = srs["title"]
+    else:
+        srs["title_translate"] = str(srs["title"]) + " ss"
+    if type(srs["description"]) == float:
+        srs["description_translate"] = srs["description"]
+    else:
+        srs["description_translate"] = str(srs["description"]) + " ss"
+    return srs
+def translate_contents(x):
+    srs = x.copy()
+    if type(srs["title"]) == float:
+        srs["title_translate"] = srs["title"]
+    else:
+        srs["title_translate"] = str(srs["title"]) + " ss"
+    if type(srs["description"]) == float:
+        srs["description_translate"] = srs["description"]
+    else:
+        srs["description_translate"] = str(srs["description"]) + " ss"
+    if type(srs["text"]) == float:
+        srs["text_translate"] = srs["text"]
+    else:
+        srs["text_translate"] = str(srs["text"]) + " ss"
+    return srs
 
 # find the unique ids for trees
 topic_trees_id_list = list(topics["channel"].value_counts().index)
 
 class Node:
-    def __init__(self):
-        self.parent = None
-        self.children = []
-
-class Node:
-    def __init__(self, title, description, channel, category, level, language, has_content, uid):
+    def __init__(self, title, description, channel, category, level, language, has_content, uid, translate):
         self.parent = None
         self.children = []
         self.title = title
@@ -29,6 +54,7 @@ class Node:
         self.language = language
         self.has_content = has_content
         self.uid = uid
+        self.translate = translate
 
     def __str__(self):
         return "Topic: " + self.title + "   " + self.language
@@ -105,8 +131,9 @@ def initialize_topic_trees():
             language = topics_lvl_k.loc[idx, "language"]
             parent = topics_lvl_k.loc[idx, "parent"]
             has_content = topics_lvl_k.loc[idx, "has_content"]
+            translate = topics_lvl_k.loc[idx, "title_translate"]
 
-            node = Node(title, description, channel, category, level, language, has_content, idx)
+            node = Node(title, description, channel, category, level, language, has_content, idx, translate)
             topic_total_nodes[idx] = node
             # at root level iff k = 0
             if k == 0:

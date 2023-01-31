@@ -1,3 +1,6 @@
 data/content.csv
 data/correlations.csv
 data/topics.csv
+data/content_translate.csv
+data/topics_translate.csv
+./argos_packages_installation.py
