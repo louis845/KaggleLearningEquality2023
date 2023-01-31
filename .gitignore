@@ -4,3 +4,6 @@ data/topics.csv
 data/content_translate.csv
 data/topics_translate.csv
 ./argos_packages_installation.py
+./.idea
+./.idea/
+./.idea/*
