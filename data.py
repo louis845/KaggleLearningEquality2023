@@ -4,8 +4,6 @@ Python file to manage / load the data fram the csv files. Defines classes such a
 
 
 import pandas as pd
-import argostranslate.package
-import argostranslate.translate
 
 contents = pd.read_csv("data/content_translate.csv", index_col = 0)
 correlations = pd.read_csv("data/correlations.csv", index_col = 0)
