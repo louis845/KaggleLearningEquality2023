@@ -24,6 +24,7 @@ Ideas:
    * Use NLTK WordNet for grouping (lemmatization)
  * Use pretrained transformer models (BERT)
    * https://www.tensorflow.org/text/tutorials/classify_text_with_bert
+   * Better to get vector output to use for clustering later
  ## Fit model for correlation tasks
 Ideas:
  * K means, K nearest neighbors 
