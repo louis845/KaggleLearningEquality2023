@@ -7,3 +7,4 @@ data/topics_translate.csv
 ./.idea
 ./.idea/
 ./.idea/*
+./run_notebook.bat
