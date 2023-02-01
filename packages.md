@@ -10,3 +10,5 @@
 ## Packages for natural language processing:
 These packages are used for translation (to English), and pretrained transformer models for NLP tasks.
 * argostranslate 1.7.5 (don't need to install this locally since this would be used in Kaggle notebook)
+This package is used for lemmatizing (grouping) English words. 
+* nltk (don't need to install it yet)
