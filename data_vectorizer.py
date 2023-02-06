@@ -3,6 +3,7 @@ import nltk.stem
 import pandas as pd
 import numpy as np
 import data
+import itertools
 
 lem = nltk.stem.WordNetLemmatizer()
 
@@ -118,3 +119,50 @@ def random_test_contents_sample(sample_size):
 
 def random_test_topics_sample(sample_size):
     return test_topics[list(np.random.choice(len(test_topics), sample_size, replace=False))]
+
+# n = initial sample size is the size of the n x n matrix of random positions of topics and contents
+# zero_to_one_ratio is the final ratio of zeros in the batch to the one in the batch, where values > 1
+# means more zeros than ones.
+# if zero_to_one_ratio is None, this would simply be sampling all elements from n x n matrix.
+#
+# Returns a tuple (contents_list, topics_list, correlations), where (contents_list[k], topics_list[k]) store
+# the kth entry in the batch, correlations[k] store 0,1, whether contents_list[k] is related to topics_list[k]
+def random_train_batch_sample(initial_sample_size = 1000, zero_to_one_ratio = None):
+    contents_list = random_train_contents_sample(initial_sample_size)
+    topics_list = random_train_topics_sample(initial_sample_size)
+
+    cor_frame = obtain_correlation_frame(topics_list, contents_list)
+
+    if zero_to_one_ratio is None:
+        prod = itertools.product(topics_list, contents_list)
+        lists = list(zip(*prod))
+        return lists[1], lists[0], cor_frame.to_numpy().flatten()
+
+    if initial_sample_size < 1000:
+        raise Exception("Zero to one ratio can be used only if initial sample size >= 1000!")
+
+    while cor_frame.to_numpy().sum() < 10:
+        contents_list = random_train_contents_sample(initial_sample_size)
+        topics_list = random_train_topics_sample(initial_sample_size)
+        cor_frame = obtain_correlation_frame(topics_list, contents_list)
+
+    cor_mat = cor_frame.to_numpy().astype(dtype=np.int32)
+
+    one_locations = np.where(cor_mat == 1)
+    zero_locations = np.where(cor_mat == 0)
+    stopics = list(one_locations[0])
+    scontents = list(one_locations[1])
+
+    one_length = len(stopics)
+    zero_length = int(one_length * zero_to_one_ratio)
+    correlations = [1] * one_length
+    correlations.extend([0] * zero_length)
+
+    zero_samples = list(np.random.choice(len(zero_locations[0]), zero_length, replace=False))
+    stopics.extend(zero_locations[0][zero_samples])
+    scontents.extend(zero_locations[1][zero_samples])
+
+    stopics = topics_list[stopics]
+    scontents = contents_list[scontents]
+
+    return scontents, stopics, correlations

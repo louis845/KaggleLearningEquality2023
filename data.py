@@ -119,7 +119,7 @@ def initialize_topic_trees():
 def initialize_topic_tree_contents():
     # first consider the topics subtable with only rows where has_content is True.
     topic_and_contents = topics.loc[topics.has_content == True]\
-        .merge(correlations, left_on="id", right_on="topic_id", how="inner")
+        .join(correlations, how="inner")
     # then perform an inner join operation to obtain the table with corresponding content ids.
 
     # we only need the channel and content ids
