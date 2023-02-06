@@ -6,9 +6,9 @@ Python file to manage / load the data fram the csv files. Defines classes such a
 import pandas as pd
 import numpy as np
 
-contents = pd.read_csv("data/content_translate.csv", index_col = 0)
+contents = pd.read_csv("data/contents_translate_vectorize.csv", index_col = 0)
 correlations = pd.read_csv("data/correlations.csv", index_col = 0)
-topics = pd.read_csv("data/topics_translate.csv", index_col = 0)
+topics = pd.read_csv("data/topics_translate_vectorize.csv", index_col = 0)
 
 # find the unique ids for trees
 topic_trees_id_list = list(topics["channel"].value_counts().index)
