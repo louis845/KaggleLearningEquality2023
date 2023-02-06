@@ -81,14 +81,11 @@ def obtain_correlation_frame(topics_list, contents_list):
                 cor_frame.loc[topic_id, content_id] = 1
     return cor_frame
 
-def internal_transform(x):
-    return pd.Series(name = x.name, data = [x["title_vectorize"], x["description_vectorize"]], index = ["title_translate", "description_translate"])
-
 def obtain_topics_vector(topics_list):
-    return data.topics.loc[topics_list][["title_vectorize", "description_vectorize"]].apply(internal_transform, axis = 1)
+    return data.topics.loc[topics_list][["title_vectorize", "description_vectorize"]].rename(columns = {"title_vectorize": "title_translate", "description_vectorize": "description_translate"})
 
 def obtain_contents_vector(contents_list):
-    return data.contents.loc[contents_list][["title_vectorize", "description_vectorize"]].apply(internal_transform, axis = 1)
+    return data.contents.loc[contents_list][["title_vectorize", "description_vectorize"]].rename(columns = {"title_vectorize": "title_translate", "description_vectorize": "description_translate"})
 
 # train data uses the largest connected component
 train_contents = obtain_learnable_contents(data.channel_components[0])
