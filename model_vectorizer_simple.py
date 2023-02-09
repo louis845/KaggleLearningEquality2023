@@ -1,30 +1,20 @@
-import sys
-sys.path.insert(1, "/kaggle/input/learningequalityvectorizationml/")
-import data
-import data_vectorizer
-
-def transform_string_to_list(x):
-    if len(x) == 2:
-        return []
-    return [int(n) for n in x[1:-1].split(", ")]
-
-data.contents["title_vectorize"] = data.contents["title_vectorize"].apply(transform_string_to_list)
-data.contents["description_vectorize"] = data.contents["description_vectorize"].apply(transform_string_to_list)
-data.topics["title_vectorize"] = data.topics["title_vectorize"].apply(transform_string_to_list)
-data.topics["description_vectorize"] = data.topics["description_vectorize"].apply(transform_string_to_list)
+# the training steps are commented out since it requires quite a lot of GPU memory!!
 
 import tensorflow as tf
 import tensorflow.keras
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import data_vectorizer
+# import data_vectorizer_tf
 
-
-class ModelVectorizerSimple(tf.keras.Model):
-    def __init__(self, zero_to_one_ratio):
-        super(ModelVectorizerSimple, self).__init__()
+class Model(tf.keras.Model):
+    def __init__(self, zero_to_one_ratio, training_initial_sample_size=1000, steps_per_epoch=50):
+        super(Model, self).__init__()
 
         self.zero_to_one_ratio = zero_to_one_ratio
+        self.training_initial_sample_size = training_initial_sample_size
+        self.steps_per_epoch = steps_per_epoch
 
         # define layers here, input is (batch_size, string_sequence_length)
         # initial embedding layers. in below, we evaluate this with ragged tensors input (on second axis (1))
@@ -50,16 +40,19 @@ class ModelVectorizerSimple(tf.keras.Model):
         self.entropy = tf.keras.metrics.BinaryCrossentropy(name="entropy")
 
         # metrics for test set
-        self.test_accuracy = tf.keras.metrics.BinaryAccuracy(name="test_accuracy")
-        self.test_precision = tf.keras.metrics.Precision(name="test_precision")
-        self.test_recall = tf.keras.metrics.Recall(name="test_recall")
-        self.test_entropy = tf.keras.metrics.BinaryCrossentropy(name="test_entropy")
+        self.full_accuracy = tf.keras.metrics.BinaryAccuracy(name="full_accuracy", threshold=0.7)
+        self.full_precision = tf.keras.metrics.Precision(name="full_precision", thresholds=0.7)
+        self.full_recall = tf.keras.metrics.Recall(name="full_recall", thresholds=0.7)
+        self.test_precision = tf.keras.metrics.Precision(name="test_precision", thresholds=0.7)
+        self.test_recall = tf.keras.metrics.Recall(name="test_recall", thresholds=0.7)
+
+        self.num_step = 0
 
     def compile(self):
-        super(ModelVectorizerSimple, self).compile(run_eagerly=True)
+        super(Model, self).compile(run_eagerly=True)
         # loss and optimizer
         self.loss = tf.keras.losses.BinaryCrossentropy()
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.00025)
 
     def call(self, mdata):
         content_title, content_description, topic_title, topic_description = mdata
@@ -71,7 +64,7 @@ class ModelVectorizerSimple(tf.keras.Model):
         embedding_result = self.concat_layer([t1, t2, t3, t4])
         return self.dense3(self.dense2(self.dense1(self.relu1(embedding_result))))
 
-    def obtain_tensor_values(self, initial_sample_size=1000, zero_to_one_ratio=None):
+    """def obtain_tensor_values(self, initial_sample_size=1000, zero_to_one_ratio=None):
         contents_list, topics_list, correlations = data_vectorizer.random_train_batch_sample(
             initial_sample_size=initial_sample_size, zero_to_one_ratio=zero_to_one_ratio)
 
@@ -87,10 +80,42 @@ class ModelVectorizerSimple(tf.keras.Model):
 
         return content_title, content_description, topic_title, topic_description, y
 
+    def obtain_tensor_values2(self, initial_sample_size=1000, zero_to_one_ratio=None):
+        contents_list, topics_list, correlations = data_vectorizer_tf.random_train_batch_sample(
+            initial_sample_size=initial_sample_size, zero_to_one_ratio=zero_to_one_ratio)
+
+        contents_strings = data_vectorizer_tf.obtain_train_contents_vector(contents_list)
+        topics_strings = data_vectorizer_tf.obtain_train_topics_vector(topics_list)
+
+        content_title, content_description = contents_strings
+        topic_title, topic_description = topics_strings
+
+        y = tf.constant(correlations)
+
+        return content_title, content_description, topic_title, topic_description, y
+
+    def obtain_test_values(self, initial_sample_size=1000, zero_to_one_ratio=None):
+        contents_list, topics_list, correlations = data_vectorizer_tf.random_test_batch_sample(
+            initial_sample_size=initial_sample_size, zero_to_one_ratio=zero_to_one_ratio)
+
+        contents_strings = data_vectorizer_tf.obtain_train_contents_vector(contents_list)
+        topics_strings = data_vectorizer_tf.obtain_train_topics_vector(topics_list)
+
+        content_title, content_description = contents_strings
+        topic_title, topic_description = topics_strings
+
+        y = tf.constant(correlations)
+
+        return content_title, content_description, topic_title, topic_description, y
+
     def train_step(self, data):
         # feedforward + backpropragation with training set
-        content_title, content_description, topic_title, topic_description, y = self.obtain_tensor_values(1000,
-                                                                                                          self.zero_to_one_ratio)
+        if self.zero_to_one_ratio < 100:
+            content_title, content_description, topic_title, topic_description, y = self.obtain_tensor_values(
+                self.training_initial_sample_size, self.zero_to_one_ratio)
+        else:
+            content_title, content_description, topic_title, topic_description, y = self.obtain_tensor_values2(
+                self.training_initial_sample_size, self.zero_to_one_ratio)
 
         with tf.GradientTape() as tape:
             y_pred = self((content_title, content_description, topic_title, topic_description))
@@ -105,15 +130,24 @@ class ModelVectorizerSimple(tf.keras.Model):
             m.update_state(y, y_pred)
 
         # feedforward with test set for metrics
-        content_title, content_description, topic_title, topic_description, y = self.obtain_tensor_values(400)
+        if self.num_step % self.steps_per_epoch == 0:
+            content_title, content_description, topic_title, topic_description, y = self.obtain_tensor_values2(600)
 
-        y_pred = self((content_title, content_description, topic_title, topic_description))
+            y_pred = self((content_title, content_description, topic_title, topic_description))
 
-        for m in self.test_metrics:
-            m.update_state(y, y_pred)
+            for m in self.full_metrics:
+                m.update_state(y, y_pred)
 
+            content_title, content_description, topic_title, topic_description, y = self.obtain_test_values(600)
+
+            y_pred = self((content_title, content_description, topic_title, topic_description))
+
+            for m in self.test_metrics:
+                m.update_state(y, y_pred)
+        self.num_step += 1
         # Return a dict mapping metric names to current value
-        return {**{m.name: m.result() for m in self.metrics}, **{m.name: m.result() for m in self.test_metrics}}
+        return {**{m.name: m.result() for m in self.metrics}, **{m.name: m.result() for m in self.full_metrics},
+                **{m.name: m.result() for m in self.test_metrics}}"""
 
     @property
     def metrics(self):
@@ -121,4 +155,8 @@ class ModelVectorizerSimple(tf.keras.Model):
 
     @property
     def test_metrics(self):
-        return [self.test_accuracy, self.test_precision, self.test_recall, self.test_entropy]
+        return [self.test_precision, self.test_recall]
+
+    @property
+    def full_metrics(self):
+        return [self.full_accuracy, self.full_precision, self.full_recall]
