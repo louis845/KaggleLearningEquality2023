@@ -1,0 +1,1 @@
+resources_path = "data/opus_translation_models/"
