@@ -4,10 +4,12 @@ Python file to manage / load the data fram the csv files. Defines classes such a
 
 
 import pandas as pd
+import numpy as np
+import config
 
-contents = pd.read_csv("data/content_translate.csv", index_col = 0)
-correlations = pd.read_csv("data/correlations.csv", index_col = 0)
-topics = pd.read_csv("data/topics_translate.csv", index_col = 0)
+contents = pd.read_csv(config.resources_path + "contents_translate_vectorize.csv", index_col = 0)
+correlations = pd.read_csv(config.resources_path + "correlations.csv", index_col = 0)
+topics = pd.read_csv(config.resources_path + "topics_translate_vectorize.csv", index_col = 0)
 
 # find the unique ids for trees
 topic_trees_id_list = list(topics["channel"].value_counts().index)
@@ -118,7 +120,7 @@ def initialize_topic_trees():
 def initialize_topic_tree_contents():
     # first consider the topics subtable with only rows where has_content is True.
     topic_and_contents = topics.loc[topics.has_content == True]\
-        .merge(correlations, left_on="id", right_on="topic_id", how="inner")
+        .join(correlations, how="inner")
     # then perform an inner join operation to obtain the table with corresponding content ids.
 
     # we only need the channel and content ids
@@ -147,3 +149,55 @@ def initialize_topic_tree_contents():
 
 initialize_topic_trees()
 initialize_topic_tree_contents()
+
+# compute the connected components of the set of channels, where the edges
+# between each channel exists iff the intersection of the contents they
+# contain are non empty
+channel_components = []
+
+def initialize_connected_components():
+    # helper to find the number of intersections
+    def find_number_intersections(i, j):
+        channel_i = topic_trees_id_list[i]
+        channel_j = topic_trees_id_list[j]
+        intersection = set(topic_trees_contents[channel_i]).intersection(set(topic_trees_contents[channel_j]))
+        return len(intersection)
+
+    n = len(topic_trees_id_list)
+    intersection_matrix = np.zeros(shape=(n, n))
+
+    for i in range(n):
+        for j in range(i):
+            intersection_matrix[j, i] = intersection_matrix[i, j] = find_number_intersections(i, j)
+
+    intersect_data = pd.DataFrame(data=intersection_matrix, columns=topic_trees_id_list, index=topic_trees_id_list)
+
+    visited_trees = []
+    def dfs_traverse(channel, cluster_idx):
+        # visit this node and add it to the graph
+        visited_trees.append(channel)
+        channel_components[cluster_idx].append(channel)
+
+        # visit unvisited neighbors
+        neighbors = list(intersect_data.loc[intersect_data[channel] > 0].index)
+        for channel_neighbor in neighbors:
+            if channel_neighbor not in visited_trees:
+                dfs_traverse(channel_neighbor, cluster_idx)
+
+    cidx = 0
+    for channel in topic_trees_id_list:
+        if channel not in visited_trees:
+            channel_components.append([])
+            dfs_traverse(channel, cidx)
+            cidx += 1
+
+initialize_connected_components()
+
+def obtain_contents(channel_list):
+    lst = []
+    for channel in channel_list:
+        lst.extend(topic_trees_contents[channel])
+    return list(dict.fromkeys(lst)) # make it unique
+
+def obtain_topics(channel_list):
+    return topics.loc[topics["channel"].isin(channel_list)]
