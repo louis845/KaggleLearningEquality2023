@@ -31,7 +31,7 @@ def translate_sentences(sentences, translate_info):
     tokens = tokenizer.encode(sentences, out_type=str)
     results = translator.translate_batch(tokens)
     output = tokenizer.decode([result.hypotheses[0] for result in results])
-    output = [text.replace("▁", " ").replace("⁇ cmn_Hans ⁇", "").strip() for text in output]
+    output = [text.replace("▁", " ").replace("⁇ cmn_Hans ⁇", "").replace("⁇ cmn_Hant ⁇", "").strip() for text in output]
     return output
 
 def detect_language(text):
