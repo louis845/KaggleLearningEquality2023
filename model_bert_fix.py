@@ -27,6 +27,7 @@ import tensorflow_text as text
 import numpy as np
 import data_bert
 import config
+import gc
 
 class TrainingSampler:
     # loads the data as tf tensors from the folders specified. note that the embedded_vectors_folder require "/" at the end.
@@ -326,7 +327,8 @@ class Model(tf.keras.Model):
         y_pred = self(input_data)
         for m in self.no_lang_test_small_metrics:
             m.update_state(y, y_pred)
-
+        
+        gc.collect()
         # Return a dict mapping metric names to current value
         return {**{m.name: m.result() for m in self.metrics}, **{m.name: m.result() for m in self.full_metrics},
                 **{m.name: m.result() for m in self.test_metrics},
