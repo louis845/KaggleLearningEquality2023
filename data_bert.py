@@ -1,40 +1,91 @@
 import config
-import data
 import numpy as np
 import pandas as pd
+import json
+import gc
 
-contents_availability = np.zeros(shape = (len(data.contents), 3), dtype = bool)
+contents = pd.read_csv(config.resources_path + "contents_translate.csv", index_col = 0)
+correlations = pd.read_csv(config.resources_path + "correlations.csv", index_col = 0)
+topics = pd.read_csv(config.resources_path + "topics_translate.csv", index_col = 0)
+
+# inverse map, to obtain the integer id of topic / content given the str id.
+contents_inv_map = pd.Series(data = np.arange(len(contents)), index = contents.index)
+topics_inv_map = pd.Series(data = np.arange(len(topics)), index = topics.index)
+
+"""# compute and obtain the tree structure of topics.
+levels = 10
+
+topics_group = [] # topics_group[k] are the partition by kth level
+# each topics_group[k], is a dict {"groups":groups, "group_ids":group_ids}.
+# groups and group_ids are np arrays with the same size.
+# each group_ids[j] correspond to the integer id for the topic at the kth level
+# each group[j] is another np array containing all the integer ids of subtopics (and itself)
+
+
+topic_trees_contents = [] # topic_trees_contents is a list, where each topic[k] is a 
+
+def generate_topics_grouping_info():
+    # generate the groups
+    for k in range(levels + 1):
+        topics_k_level = topics.loc[topics["level"] == k]
+        group_ids = np.array(topics_inv_map.loc[topics_k_level.index], dtype = np.int32)
+        groups = np.array([np.array([idx]) for idx in group_ids] ,dtype = "object")
+        topics_group.append({"groups":groups, "group_ids":group_ids})
+
+        if k > 0:
+            topics_i_level = topics_k_level
+            for j in range(k):
+                i = k-j-1
+                parent_idx = pd.Index(list(topics_i_level["parent"]))
+                topics_i_level = topics.loc[parent_idx]
+                par_locs = np.array(topics_inv_map.loc[parent_idx], dtype = np.int32)
+                par_locs_in_topics = np.searchsorted(topics_group[i]["group_ids"], par_locs)
+                for pl_i in range(len(par_locs_in_topics)):
+                    pl = par_locs_in_topics[pl_i]
+                    old_arr = topics_group[i]["groups"][pl]
+                    topics_group[i]["groups"][pl] = np.concatenate([old_arr, np.array([group_ids[pl_i]], dtype = np.int32)])
+                    
+                    del old_arr
+
+    # generate the contents for each given group
+    topics_group[0]
+
+generate_topics_grouping_info()"""
+with open(config.resources_path + "temp_channel_components.json") as file:
+    channel_components = json.loads(file.read())
+with open(config.resources_path + "temp_topic_trees_contents.json") as file:
+    topic_trees_contents = json.loads(file.read())
+
+# -------------------------------- restrict the topics and contents to those that have at least 1 description --------------------------------
+contents_availability = np.zeros(shape = (len(contents), 3), dtype = bool)
 contents_availability[:, 0] = np.load(config.resources_path + "bert_tokens/contents_description/has_content_mask.npy")
 contents_availability[:, 1] = np.load(config.resources_path + "bert_tokens/contents_title/has_content_mask.npy")
 contents_availability[:, 2] = np.logical_or(contents_availability[:, 0], contents_availability[:, 1])
-contents_availability = pd.DataFrame(data = contents_availability, columns = ["description", "title", "some_available"], index = data.contents.index)
+contents_availability = pd.DataFrame(data = contents_availability, columns = ["description", "title", "some_available"], index = contents.index)
 
-topics_availability = np.zeros(shape = (len(data.topics), 3), dtype = bool)
+topics_availability = np.zeros(shape = (len(topics), 3), dtype = bool)
 topics_availability[:, 0] = np.load(config.resources_path + "bert_tokens/topics_description/has_content_mask.npy")
 topics_availability[:, 1] = np.load(config.resources_path + "bert_tokens/topics_title/has_content_mask.npy")
 topics_availability[:, 2] = np.logical_or(topics_availability[:, 0], topics_availability[:, 1])
-topics_availability = pd.DataFrame(data = topics_availability, columns = ["description", "title", "some_available"], index = data.topics.index)
+topics_availability = pd.DataFrame(data = topics_availability, columns = ["description", "title", "some_available"], index = topics.index)
 
 learnable_contents = contents_availability.loc[contents_availability["some_available"]].index
 learnable_topics = topics_availability.loc[topics_availability["some_available"]].index
-
-contents_inv_map = pd.Series(data = np.arange(len(data.contents)), index = data.contents.index)
-topics_inv_map = pd.Series(data = np.arange(len(data.topics)), index = data.topics.index)
 
 # -------------------------------- obtain train test split here --------------------------------
 def filter_channel_topics(channels_list, restriction_index = None):
     total_indices = pd.Index([])
     for channel_id in channels_list:
         if restriction_index is not None:
-            total_indices = total_indices.append(data.topics.loc[data.topics["channel"] == channel_id].index.intersection(restriction_index))
+            total_indices = total_indices.append(topics.loc[topics["channel"] == channel_id].index.intersection(restriction_index))
         else:
-            total_indices = total_indices.append(data.topics.loc[data.topics["channel"] == channel_id].index)
+            total_indices = total_indices.append(topics.loc[topics["channel"] == channel_id].index)
     return total_indices
 
 def filter_channel_contents(channels_list, restriction_index = None):
     total_indices = pd.Index([])
     for channel_id in channels_list:
-        additional = pd.Index(data.topic_trees_contents[channel_id])
+        additional = pd.Index(topic_trees_contents[channel_id])
         if restriction_index is not None:
             total_indices = total_indices.append( additional.intersection(restriction_index) )
         else:
@@ -42,17 +93,17 @@ def filter_channel_contents(channels_list, restriction_index = None):
     return total_indices
 
 def index_is_usable(idx):
-    contents_count = len(filter_channel_contents(data.channel_components[idx], learnable_contents))
-    topics_count = len(filter_channel_topics(data.channel_components[idx], learnable_topics))
+    contents_count = len(filter_channel_contents(channel_components[idx], learnable_contents))
+    topics_count = len(filter_channel_topics(channel_components[idx], learnable_topics))
     return contents_count > 100 and topics_count > 100
 
-train_contents = filter_channel_contents(data.channel_components[0], learnable_contents)
-train_topics = filter_channel_topics(data.channel_components[0], learnable_topics)
+train_contents = filter_channel_contents(channel_components[0], learnable_contents)
+train_topics = filter_channel_topics(channel_components[0], learnable_topics)
 
 test_data_channels = []
-for idx in range(1, len(data.channel_components)):
+for idx in range(1, len(channel_components)):
     if index_is_usable(idx):
-        test_data_channels.extend(data.channel_components[idx])
+        test_data_channels.extend(channel_components[idx])
 test_contents = filter_channel_contents(test_data_channels, learnable_contents)
 test_topics = filter_channel_topics(test_data_channels, learnable_topics)
 
@@ -62,10 +113,10 @@ train_topics_num_id = np.sort(topics_inv_map[train_topics].to_numpy())
 test_contents_num_id = np.sort(contents_inv_map[test_contents].to_numpy())
 test_topics_num_id = np.sort(topics_inv_map[test_topics].to_numpy())
 
-train_contents = data.contents.index[train_contents_num_id]
-train_topics = data.topics.index[train_topics_num_id]
-test_contents = data.contents.index[test_contents_num_id]
-test_topics = data.topics.index[test_topics_num_id]
+train_contents = contents.index[train_contents_num_id]
+train_topics = topics.index[train_topics_num_id]
+test_contents = contents.index[test_contents_num_id]
+test_topics = topics.index[test_topics_num_id]
 
 # -------------------------------- create association matrix from correlations --------------------------------
 # a list of tuples (topic, content) such that there exists a correlation between them
@@ -82,9 +133,9 @@ has_correlation_train_topics = []
 has_correlation_train_contents = []
 has_correlation_test_topics = []
 has_correlation_test_contents = []
-for k in range(len(data.topics)):
-    if data.topics.loc[data.topics.index[k], "has_content"]:
-        content_ids = data.correlations.loc[data.topics.index[k], "content_ids"].split()
+for k in range(len(topics)):
+    if topics.loc[topics.index[k], "has_content"]:
+        content_ids = correlations.loc[topics.index[k], "content_ids"].split()
         has_correlation_topics.extend([k] * len(content_ids))
         has_correlation_contents.extend(list( np.sort(contents_inv_map[content_ids].to_numpy()) ))
 
@@ -229,3 +280,5 @@ def obtain_test_square_sample(sample_size):
     cor = has_correlations(contents, topics)
 
     return topics, contents, cor.astype(np.float64)
+
+gc.collect()

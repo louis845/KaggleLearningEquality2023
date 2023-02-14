@@ -1,12 +1,12 @@
 # Python packages used
 ## Python version 3.10
 ## Core packages:
-* numpy 1.24.1
-* pandas 1.5.2
-* scipy 1.10.0
-* matplotlib 3.6.3
-* scikit-learn 1.2.0
-* seaborn 0.12.2
+* numpy 1.21.6
+* pandas 1.3.5
+* scipy 1.7.3
+* matplotlib 3.5.2
+* scikit-learn 1.0.2
+* seaborn 0.11.2
 * cupy-cuda11x 11.5.0 (only for data_bert_gpu.py)
 ## Packages for natural language processing:
 These packages are used for translation (to English), and pretrained transformer models for NLP tasks.
