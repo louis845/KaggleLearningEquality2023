@@ -21,5 +21,6 @@ These packages are used for translation (to English), and pretrained transformer
   * BERT transformer model https://www.tensorflow.org/text/tutorials/classify_text_with_bert
   * Opus-MT pretrained models https://github.com/Helsinki-NLP/Opus-MT-train/tree/master/models (Creative Commons Attribution 4.0)
   * ctranslate2 2.24.0 https://github.com/OpenNMT/CTranslate2/blob/master/LICENSE (MIT License)
-  * sentencepiece 0.1.96 https://github.com/google/sentencepiece (Apache License 2.0)
-  * langdetect 1.0.9 https://github.com/Mimino666/langdetect (Apache License 2.0)
+  * sentencepiece 0.1.97 https://github.com/google/sentencepiece (Apache License 2.0)
+  * langid 1.1.6 https://github.com/saffsd/langid.py (BSD 2-Clause)
+  * autocorrect 2.6.1 https://github.com/filyp/autocorrect (LGPL v3)

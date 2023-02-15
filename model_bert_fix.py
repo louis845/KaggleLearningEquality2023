@@ -52,6 +52,12 @@ class TrainingSampler:
             self.contents_one_hot = np.load(contents_one_hot_file)
             self.topics_one_hot = np.load(topics_one_hot_file)
 
+    def obtain_total_num_topics(self):
+        return self.topics_one_hot.shape[0]
+
+    def obtain_total_num_contents(self):
+        return self.contents_one_hot.shape[0]
+
     # topics_id and contents_id are the indices for topics and contents. each entry in the batch is (topics_id[k], contents_id[k]).
     # the indices are in integer form (corresponding to data_bert.train_contents_num_id etc).
     def obtain_input_data(self, topics_id, contents_id):
@@ -145,14 +151,18 @@ class Model(tf.keras.Model):
         self.concat_layer = tf.keras.layers.Concatenate(axis = 2)
 
         # standard stuff
-        self.dropout0 = tf.keras.layers.Dropout(rate=0.05)
+        self.dropout0 = tf.keras.layers.GaussianDropout(rate=0.1)
         self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu")
-        self.dropout1 = tf.keras.layers.Dropout(rate=0.05)
+        self.dropout1 = tf.keras.layers.Dropout(rate=0.1)
         self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu")
-        self.dropout2 = tf.keras.layers.Dropout(rate=0.05)
+        self.dropout2 = tf.keras.layers.Dropout(rate=0.1)
         self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu")
-        self.dropout3 = tf.keras.layers.Dropout(rate=0.05)
-        self.dense4 = tf.keras.layers.Dense(units=1, activation="sigmoid")
+        self.dropout3 = tf.keras.layers.Dropout(rate=0.1)
+        self.dense4 = tf.keras.layers.Dense(units=128)
+        self.relu4 = tf.keras.layers.ReLU()
+        self.dropout4 = tf.keras.layers.Dropout(rate=0.1)
+        self.dense5 = tf.keras.layers.Dense(units=1, activation="sigmoid")
+
 
         # loss functions and eval metrics
         self.accuracy = tf.keras.metrics.BinaryAccuracy(name="accuracy")
@@ -217,11 +227,12 @@ class Model(tf.keras.Model):
         # combine the (batch_size x set_size x (bert_embedding_size / num_langs)) tensors into (batch_size x set_size x (bert_embedding_size*2+num_langs+bert_embedding_size*2+num_langs))
         embedding_result = self.concat_layer([contents_description, contents_title, contents_lang, topics_description, topics_title, topics_lang])
 
-        t = self.dropout0(embedding_result)
+        t = self.dropout0(embedding_result, training=training)
         t = self.dropout1(self.dense1(t), training=training)
         t = self.dropout2(self.dense2(t), training=training)
         t = self.dropout3(self.dense3(t), training=training)
-        t = self.dense4(t) # now we have a batch_size x set_size x 1 tensor, the last axis is reduced to 1 by linear transforms.
+        t = self.dropout4(self.relu4(self.dense4(t)), training=training)
+        t = self.dense5(t) # now we have a batch_size x set_size x 1 tensor, the last axis is reduced to 1 by linear transforms.
         if training and actual_y is not None: # here we use overestimation training method for the set
             p = 4.0
             pmean = tf.math.pow(t, p)
@@ -240,7 +251,22 @@ class Model(tf.keras.Model):
         else: # here we just return the probabilities normally. the probability will be computed as the max inside the set
             return tf.squeeze(tf.reduce_max(t, axis = 1), axis = 1)
 
+    def eval_omit_last(self, data, training=False):
+        contents_description = data["contents"]["description"]
+        contents_title = data["contents"]["title"]
+        contents_lang = data["contents"]["lang"]
+        topics_description = data["topics"]["description"]
+        topics_title = data["topics"]["title"]
+        topics_lang = data["topics"]["lang"]
+        # combine the (batch_size x set_size x (bert_embedding_size / num_langs)) tensors into (batch_size x set_size x (bert_embedding_size*2+num_langs+bert_embedding_size*2+num_langs))
+        embedding_result = self.concat_layer(
+            [contents_description, contents_title, contents_lang, topics_description, topics_title, topics_lang])
 
+        t = self.dropout0(embedding_result, training=training)
+        t = self.dropout1(self.dense1(t), training=training)
+        t = self.dropout2(self.dense2(t), training=training)
+        t = self.dropout3(self.dense3(t), training=training)
+        return self.dense4(t) # now we have a batch_size x set_size x 128 tensor, the last axis is reduced to 128 by linear transforms.
     def train_step(self, data):
         for k in range(50):
             topics, contents, cors = data_bert.obtain_train_sample(one_sample_size = self.training_one_sample_size,

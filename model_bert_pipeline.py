@@ -8,9 +8,9 @@ import pandas as pd
 from IPython.display import Markdown
 import matplotlib.pyplot as plt
 
-print("premodel")
-model = model_bert_fix.Model(units_size = 450)
-print("presampler")
+
+model = model_bert_fix.Model(units_size = 425)
+
 training_sampler = model_bert_fix.TrainingSampler(embedded_vectors_folder = config.resources_path + "bert_embedded_vectors/bert_vectorized_L6_H128/",
                                contents_one_hot_file = config.resources_path + "one_hot_languages/contents_lang_train.npy",
                                topics_one_hot_file = config.resources_path + "one_hot_languages/topics_lang_train.npy", device = "cpu")
@@ -19,14 +19,14 @@ model.compile()
 model.set_training_params(7500, 7500, training_sampler = training_sampler, training_max_size = 75000)
 
 ctime = time.time()
-checkpoint_file = config.training_models_path + "model_checkpoints/{epoch:07d}.ckpt"
-logging_file = config.training_models_path + "model_checkpoints/logfile.csv"
+checkpoint_file = config.training_models_path + "more_layers_noisy/{epoch:07d}.ckpt"
+logging_file = config.training_models_path + "more_layers_noisy/logfile.csv"
 callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_file, save_weights_only = True, verbose = 0, save_freq = 20)
 csv_logger = tf.keras.callbacks.CSVLogger(logging_file, separator=',', append=False)
 
-hist = model.fit(np.array([1, 2]), epochs = 100, callbacks=[callback, csv_logger], verbose = 2, steps_per_epoch = 1)
+hist = model.fit(np.array([1, 2]), epochs = 6300, callbacks=[callback, csv_logger], verbose = 2, steps_per_epoch = 1)
 ctime = time.time() - ctime
-print(ctime)
+
 
 """del model
 del training_sampler

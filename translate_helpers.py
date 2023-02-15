@@ -2,12 +2,9 @@ import ctranslate2
 import sentencepiece as spm
 import os
 import config_translation
-import langdetect
 import numpy as np
 import pandas as pd
-
-langdetect.DetectorFactory.seed = 0
-
+import langid
 
 def get_language_model_folder(lang):
     return config_translation.resources_path + lang + "-en/"
@@ -34,19 +31,14 @@ def translate_sentences(sentences, translate_info):
     output = [text.replace("▁", " ").replace("⁇ cmn_Hans ⁇", "").replace("⁇ cmn_Hant ⁇", "").strip() for text in output]
     return output
 
+lang_detect_model = langid.langid.LanguageIdentifier.from_modelstring(langid.langid.model, norm_probs=True)
 def detect_language(text):
     try:
-        langdetect.DetectorFactory.seed = 0
-        probs = langdetect.detect_langs(text)
-        probs = {probs[0].lang: probs[0].prob for x in probs}  # convert to dict
-        """for lang in probs.keys():
-            if lang.startswith("zh"):
-                prob = probs[lang]
-                probs.pop(lang, None)
-                if "zh" in probs:
-                    probs["zh"] = probs["zh"] + prob
-                probs["zh"] = """  # note chinese is splitted into zh-tw, zh-cn. we do not need this yet since we use en only.
-        return "en" in probs and probs["en"] > 0.9
+        langid.classify("")
+        result = lang_detect_model.classify(text)
+        prob = result[1]
+        lang = result[0]
+        return lang == "en" and prob > 0.75
     except:
         return False
 
