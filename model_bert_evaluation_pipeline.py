@@ -35,6 +35,12 @@ def predict_rows(proba_callback, topic_id_rows, contents_restrict, full_topics_d
 default_topk_values = (np.arange(10) + 1) * 3  # TODO - find optimal topk
 default_topk_values = np.concatenate([default_topk_values, np.array([100, 200])])
 
+def get_topk(x, k):
+    res = np.argpartition(x, kth = -k, axis = 1)[:, -k:]
+    rep = np.repeat(np.expand_dims(np.arange(res.shape[0]), axis = 1), res.shape[1], axis = 1)
+    res2 = np.argsort(x[rep, res], axis = 1)
+    return res[rep, res2]
+
 # topics_restrict, contents_restrict are np arrays containing the restrictions to topics and contents respectively
 # usually this is used to restrict it to test set. topk_values are the topk probas for the model to choose from.
 # by default, it is
@@ -51,6 +57,7 @@ def obtain_rowwise_topk_from_files(proba_callback, topics_restrict, contents_res
 
     length = len(topics_restrict)
     prevlnumber = 0
+    max_topk = np.max(topk_values)
     for batch in range(int(math.ceil((length + 0.0) / greedy_multiple_rows))):
         low = batch * greedy_multiple_rows
         high = min((batch + 1) * greedy_multiple_rows, length)
@@ -63,7 +70,7 @@ def obtain_rowwise_topk_from_files(proba_callback, topics_restrict, contents_res
                                                full_contents_data)
             if probabilities is not None:
                 probabilities = probabilities.reshape((thigh - tlow), len(contents_restrict))
-                sorted_locs = np.argsort(probabilities, axis = 1)
+                sorted_locs = get_topk(probabilities, max_topk)
                 for i in range(len(topk_values)):
                     topk_preds[topk_values[i]][np.arange(tlow, thigh), :] = contents_restrict[sorted_locs[:,-topk_values[i]:]]
                 # if success we update
