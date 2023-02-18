@@ -8,6 +8,8 @@
 * scikit-learn 1.0.2
 * seaborn 0.11.2
 * cupy-cuda11x 11.5.0 (only for data_bert_gpu.py)
+* tensorflow 2.10.1
+* tensorflow-text 2.10.0
 ## Packages for natural language processing:
 These packages are used for translation (to English), and pretrained transformer models for NLP tasks.
 * Previous used packages (used in model_vectorizer_simple):

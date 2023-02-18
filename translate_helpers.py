@@ -50,12 +50,6 @@ def detect_languages(sentences):
 
 def obtain_lang_subroutine(text, lang):
     if type(text) == str:
-        if (" " not in text) and (sum(c.isdigit() for c in text) > 7) and (sum(c.isalpha() for c in text) > 7) and lang == "ar":
-            return "none_ar"
-        if (" " not in text) and ("source_id=" in text):
-            return "none_src"
-        if (" " not in text) and (len(text) < 6) and ("v" in text) and ("." in text) and (sum(c.isdigit() for c in text) > 1):
-            return "none_small"
         if detect_language(text):
             return "en"
     return lang

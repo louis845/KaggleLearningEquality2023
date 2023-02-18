@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import json
 import gc
+import os
 
 contents = pd.read_csv(config.resources_path + "contents_translate.csv", index_col = 0)
 correlations = pd.read_csv(config.resources_path + "correlations.csv", index_col = 0)
@@ -12,45 +13,6 @@ topics = pd.read_csv(config.resources_path + "topics_translate.csv", index_col =
 contents_inv_map = pd.Series(data = np.arange(len(contents)), index = contents.index)
 topics_inv_map = pd.Series(data = np.arange(len(topics)), index = topics.index)
 
-"""# compute and obtain the tree structure of topics.
-levels = 10
-
-topics_group = [] # topics_group[k] are the partition by kth level
-# each topics_group[k], is a dict {"groups":groups, "group_ids":group_ids}.
-# groups and group_ids are np arrays with the same size.
-# each group_ids[j] correspond to the integer id for the topic at the kth level
-# each group[j] is another np array containing all the integer ids of subtopics (and itself)
-
-
-topic_trees_contents = [] # topic_trees_contents is a list, where each topic[k] is a 
-
-def generate_topics_grouping_info():
-    # generate the groups
-    for k in range(levels + 1):
-        topics_k_level = topics.loc[topics["level"] == k]
-        group_ids = np.array(topics_inv_map.loc[topics_k_level.index], dtype = np.int32)
-        groups = np.array([np.array([idx]) for idx in group_ids] ,dtype = "object")
-        topics_group.append({"groups":groups, "group_ids":group_ids})
-
-        if k > 0:
-            topics_i_level = topics_k_level
-            for j in range(k):
-                i = k-j-1
-                parent_idx = pd.Index(list(topics_i_level["parent"]))
-                topics_i_level = topics.loc[parent_idx]
-                par_locs = np.array(topics_inv_map.loc[parent_idx], dtype = np.int32)
-                par_locs_in_topics = np.searchsorted(topics_group[i]["group_ids"], par_locs)
-                for pl_i in range(len(par_locs_in_topics)):
-                    pl = par_locs_in_topics[pl_i]
-                    old_arr = topics_group[i]["groups"][pl]
-                    topics_group[i]["groups"][pl] = np.concatenate([old_arr, np.array([group_ids[pl_i]], dtype = np.int32)])
-                    
-                    del old_arr
-
-    # generate the contents for each given group
-    topics_group[0]
-
-generate_topics_grouping_info()"""
 with open(config.resources_path + "temp_channel_components.json") as file:
     channel_components = json.loads(file.read())
 with open(config.resources_path + "temp_topic_trees_contents.json") as file:
@@ -120,61 +82,65 @@ test_topics = topics.index[test_topics_num_id]
 
 # -------------------------------- create association matrix from correlations --------------------------------
 # a list of tuples (topic, content) such that there exists a correlation between them
+# see if sorted_arr contains val
 def fast_contains(sorted_arr, val):
     idx = np.searchsorted(sorted_arr, val, side = "left")
     return idx != len(sorted_arr) and sorted_arr[idx] == val
 
+# see if sorted_arr contains vals, returns a bool array
 def fast_contains_multi(sorted_arr, vals):
     return np.searchsorted(sorted_arr, vals, side = "right") > np.searchsorted(sorted_arr, vals, side = "left")
 
-has_correlation_topics = []
-has_correlation_contents = []
-has_correlation_train_topics = []
-has_correlation_train_contents = []
-has_correlation_test_topics = []
-has_correlation_test_contents = []
-for k in range(len(topics)):
-    if topics.loc[topics.index[k], "has_content"]:
-        content_ids = correlations.loc[topics.index[k], "content_ids"].split()
-        has_correlation_topics.extend([k] * len(content_ids))
-        has_correlation_contents.extend(list( np.sort(contents_inv_map[content_ids].to_numpy()) ))
+if os.path.isdir(config.resources_path + "data_bert/"):
+    has_correlation_topics = np.load(config.resources_path + "data_bert/has_correlation_topics.npy")
+    has_correlation_contents = np.load(config.resources_path + "data_bert/has_correlation_contents.npy")
+    has_correlation_train_topics = np.load(config.resources_path + "data_bert/has_correlation_train_topics.npy")
+    has_correlation_train_contents = np.load(config.resources_path + "data_bert/has_correlation_train_contents.npy")
+    has_correlation_test_topics = np.load(config.resources_path + "data_bert/has_correlation_test_topics.npy")
+    has_correlation_test_contents = np.load(config.resources_path + "data_bert/has_correlation_test_contents.npy")
+else:
+    has_correlation_topics = []
+    has_correlation_contents = []
+    has_correlation_train_topics = []
+    has_correlation_train_contents = []
+    has_correlation_test_topics = []
+    has_correlation_test_contents = []
+    for k in range(len(topics)):
+        if topics.loc[topics.index[k], "has_content"]:
+            content_ids = correlations.loc[topics.index[k], "content_ids"].split()
+            has_correlation_topics.extend([k] * len(content_ids))
+            has_correlation_contents.extend(list( np.sort(contents_inv_map[content_ids].to_numpy()) ))
 
-        if k in train_topics_num_id:
-            """to_add = []
-            for content_num_id in contents_inv_map[content_ids]:
-                if fast_contains(train_contents_num_id, content_num_id):
-                    to_add.append(content_num_id)
-            has_correlation_train_topics.extend([k] * len(to_add))
-            to_add.sort()
-            has_correlation_train_contents.extend(to_add)"""
-            to_add = np.array(contents_inv_map[content_ids], dtype = np.int32)
-            mask = fast_contains_multi(train_contents_num_id, to_add)
-            to_add = np.sort(to_add[mask])
-            has_correlation_train_topics.extend([k] * len(to_add))
-            has_correlation_train_contents.extend(list(to_add))
-
-
-        if k in test_topics_num_id:
-            """to_add = []
-            for content_num_id in contents_inv_map[content_ids]:
-                if fast_contains(test_contents_num_id, content_num_id):
-                    to_add.append(content_num_id)
-            has_correlation_test_topics.extend([k] * len(to_add))
-            to_add.sort()
-            has_correlation_test_contents.extend(to_add)"""
-            to_add = np.array(contents_inv_map[content_ids], dtype=np.int32)
-            mask = fast_contains_multi(test_contents_num_id, to_add)
-            to_add = np.sort(to_add[mask])
-            has_correlation_test_topics.extend([k] * len(to_add))
-            has_correlation_test_contents.extend(list(to_add))
+            if k in train_topics_num_id:
+                to_add = np.array(contents_inv_map[content_ids], dtype = np.int32)
+                mask = fast_contains_multi(train_contents_num_id, to_add)
+                to_add = np.sort(to_add[mask])
+                has_correlation_train_topics.extend([k] * len(to_add))
+                has_correlation_train_contents.extend(list(to_add))
 
 
-has_correlation_contents = np.array(has_correlation_contents, dtype = np.int32)
-has_correlation_topics = np.array(has_correlation_topics, dtype = np.int32)
-has_correlation_train_contents = np.array(has_correlation_train_contents, dtype = np.int32)
-has_correlation_train_topics = np.array(has_correlation_train_topics, dtype = np.int32)
-has_correlation_test_contents = np.array(has_correlation_test_contents, dtype = np.int32)
-has_correlation_test_topics = np.array(has_correlation_test_topics, dtype = np.int32)
+            if k in test_topics_num_id:
+                to_add = np.array(contents_inv_map[content_ids], dtype=np.int32)
+                mask = fast_contains_multi(test_contents_num_id, to_add)
+                to_add = np.sort(to_add[mask])
+                has_correlation_test_topics.extend([k] * len(to_add))
+                has_correlation_test_contents.extend(list(to_add))
+
+
+    has_correlation_contents = np.array(has_correlation_contents, dtype = np.int32)
+    has_correlation_topics = np.array(has_correlation_topics, dtype = np.int32)
+    has_correlation_train_contents = np.array(has_correlation_train_contents, dtype = np.int32)
+    has_correlation_train_topics = np.array(has_correlation_train_topics, dtype = np.int32)
+    has_correlation_test_contents = np.array(has_correlation_test_contents, dtype = np.int32)
+    has_correlation_test_topics = np.array(has_correlation_test_topics, dtype = np.int32)
+
+    os.mkdir(config.resources_path + "data_bert/")
+    np.save(config.resources_path + "data_bert/has_correlation_topics.npy", has_correlation_topics)
+    np.save(config.resources_path + "data_bert/has_correlation_contents.npy", has_correlation_contents)
+    np.save(config.resources_path + "data_bert/has_correlation_train_topics.npy", has_correlation_train_topics)
+    np.save(config.resources_path + "data_bert/has_correlation_train_contents.npy", has_correlation_train_contents)
+    np.save(config.resources_path + "data_bert/has_correlation_test_topics.npy", has_correlation_test_topics)
+    np.save(config.resources_path + "data_bert/has_correlation_test_contents.npy", has_correlation_test_contents)
 
 def has_correlation(content_num_id, topic_num_id):
     left = np.searchsorted(has_correlation_topics, topic_num_id, side = "left")
@@ -187,98 +153,70 @@ def has_correlation(content_num_id, topic_num_id):
     left = np.searchsorted(subcontents, content_num_id)
     return left != len(subcontents) and subcontents[left] == content_num_id
 
-# same function as above, except we accept a list of points.
-def has_correlations(content_num_ids, topic_num_ids):
+# same function as above, except we accept a list of points, and the arrays which represent the topics and contents corrs.
+def has_correlations_general(content_num_ids, topic_num_ids, corr_contents_arr, corr_topics_arr):
     assert len(content_num_ids) == len(topic_num_ids)
 
-    left = np.searchsorted(has_correlation_topics, topic_num_ids, side = "left")
-    right = np.searchsorted(has_correlation_topics, topic_num_ids, side="right")
+    left = np.searchsorted(corr_topics_arr, topic_num_ids, side = "left")
+    right = np.searchsorted(corr_topics_arr, topic_num_ids, side="right")
 
     resarr = np.zeros(shape = (len(content_num_ids)), dtype = bool)
 
     for k in range(len(content_num_ids)):
-        subcontents = has_correlation_contents[left[k]:right[k]]
+        subcontents = corr_contents_arr[left[k]:right[k]]
         mleft = np.searchsorted(subcontents, content_num_ids[k])
         resarr[k] = mleft != len(subcontents) and subcontents[mleft] == content_num_ids[k]
     return resarr
+def has_correlations(content_num_ids, topic_num_ids):
+    return has_correlations_general(content_num_ids, topic_num_ids, has_correlation_contents, has_correlation_topics)
 
 def has_correlations_train(content_num_ids, topic_num_ids):
-    assert len(content_num_ids) == len(topic_num_ids)
-
-    left = np.searchsorted(has_correlation_train_topics, topic_num_ids, side = "left")
-    right = np.searchsorted(has_correlation_train_topics, topic_num_ids, side="right")
-
-    resarr = np.zeros(shape = (len(content_num_ids)), dtype = bool)
-
-    for k in range(len(content_num_ids)):
-        subcontents = has_correlation_train_contents[left[k]:right[k]]
-        mleft = np.searchsorted(subcontents, content_num_ids[k])
-        resarr[k] = mleft != len(subcontents) and subcontents[mleft] == content_num_ids[k]
-    return resarr
+    return has_correlations_general(content_num_ids, topic_num_ids, has_correlation_train_contents, has_correlation_train_topics)
 
 def has_correlations_test(content_num_ids, topic_num_ids):
-    assert len(content_num_ids) == len(topic_num_ids)
-
-    left = np.searchsorted(has_correlation_test_topics, topic_num_ids, side = "left")
-    right = np.searchsorted(has_correlation_test_topics, topic_num_ids, side="right")
-
-    resarr = np.zeros(shape = (len(content_num_ids)), dtype = bool)
-
-    for k in range(len(content_num_ids)):
-        subcontents = has_correlation_test_contents[left[k]:right[k]]
-        mleft = np.searchsorted(subcontents, content_num_ids[k])
-        resarr[k] = mleft != len(subcontents) and subcontents[mleft] == content_num_ids[k]
-    return resarr
+    return has_correlations_general(content_num_ids, topic_num_ids, has_correlation_test_contents, has_correlation_test_topics)
 
 # -------------------------------- randomly sample from data --------------------------------
-def obtain_train_sample(one_sample_size, zero_sample_size):
-    one_samples = np.random.choice(len(has_correlation_train_topics), one_sample_size, replace = False)
-    topics_num_id = has_correlation_train_topics[one_samples]
-    contents_num_id = has_correlation_train_contents[one_samples]
+# one_sample_size and zero_sample_size are the sizes of sample of ones or sample of zeros. note that the zeros may actually
+# be ones since they are randomly drawn with replacement from the whole topics_restricted and contents_restricted.
+# corr_contents_arr and corr_topics_arr are the tuples representing whether there is a correlation between the contents and topics.
+# topics_restricted, contents_restricted are all the topics and contents we have to draw from.
+# IMPORTANT: note that corr_contents_arr and corr_topics_arr have to ONLY contain contents and topics that are from topics_restricted
+# and contents_restricted.
+def obtain_general_sample(one_sample_size, zero_sample_size, corr_contents_arr, corr_topics_arr, contents_restricted, topics_restricted):
+    one_samples = np.random.choice(len(corr_topics_arr), one_sample_size, replace = False)
+    topics_num_id = corr_topics_arr[one_samples]
+    contents_num_id = corr_contents_arr[one_samples]
     cor = np.ones(len(one_samples))
 
-    zero_sample_topics = train_topics_num_id[np.random.choice(len(train_topics_num_id), zero_sample_size)]
-    zero_sample_contents = train_contents_num_id[np.random.choice(len(train_contents_num_id), zero_sample_size)]
-    zeroS_cor = has_correlations(zero_sample_contents, zero_sample_topics).astype(cor.dtype)
+    zero_sample_topics = topics_restricted[np.random.choice(len(topics_restricted), zero_sample_size)]
+    zero_sample_contents = contents_restricted[np.random.choice(len(contents_restricted), zero_sample_size)]
+    zeroS_cor = has_correlations_general(zero_sample_contents, zero_sample_topics, corr_contents_arr, corr_topics_arr).astype(cor.dtype)
 
     topics_num_id = np.concatenate((topics_num_id, zero_sample_topics))
     contents_num_id = np.concatenate((contents_num_id, zero_sample_contents))
     cor = np.concatenate((cor, zeroS_cor))
 
     return topics_num_id, contents_num_id, cor
+
+def obtain_general_square_sample(sample_size, corr_contents_arr, corr_topics_arr, contents_restricted, topics_restricted):
+    topics = topics_restricted[np.random.choice(len(topics_restricted), sample_size, replace = False)]
+    contents = contents_restricted[np.random.choice(len(contents_restricted), sample_size, replace=False)]
+
+    topics = np.repeat(topics, sample_size)
+    contents = np.tile(contents, sample_size)
+    cor = has_correlations_general(contents, topics, corr_contents_arr, corr_topics_arr)
+
+    return topics, contents, cor.astype(np.float64)
+
+def obtain_train_sample(one_sample_size, zero_sample_size):
+    return obtain_general_sample(one_sample_size, zero_sample_size, has_correlation_train_contents, has_correlation_train_topics, train_contents_num_id, train_topics_num_id)
 
 def obtain_test_sample(one_sample_size, zero_sample_size):
-    one_samples = np.random.choice(len(has_correlation_test_topics), one_sample_size, replace=False)
-    topics_num_id = has_correlation_test_topics[one_samples]
-    contents_num_id = has_correlation_test_contents[one_samples]
-    cor = np.ones(len(one_samples))
-
-    zero_sample_topics = test_topics_num_id[np.random.choice(len(test_topics_num_id), zero_sample_size)]
-    zero_sample_contents = test_contents_num_id[np.random.choice(len(test_contents_num_id), zero_sample_size)]
-    zeroS_cor = has_correlations(zero_sample_contents, zero_sample_topics).astype(cor.dtype)
-
-    topics_num_id = np.concatenate((topics_num_id, zero_sample_topics))
-    contents_num_id = np.concatenate((contents_num_id, zero_sample_contents))
-    cor = np.concatenate((cor, zeroS_cor))
-
-    return topics_num_id, contents_num_id, cor
+    return obtain_general_sample(one_sample_size, zero_sample_size, has_correlation_test_contents, has_correlation_test_topics, test_contents_num_id, test_topics_num_id)
 def obtain_train_square_sample(sample_size):
-    topics = train_topics_num_id[np.random.choice(len(train_topics_num_id), sample_size, replace = False)]
-    contents = train_contents_num_id[np.random.choice(len(train_contents_num_id), sample_size, replace=False)]
-
-    topics = np.repeat(topics, sample_size)
-    contents = np.tile(contents, sample_size)
-    cor = has_correlations(contents, topics)
-
-    return topics, contents, cor.astype(np.float64)
+    return obtain_general_square_sample(sample_size, has_correlation_train_contents, has_correlation_train_topics, train_contents_num_id, train_topics_num_id)
 def obtain_test_square_sample(sample_size):
-    topics = test_topics_num_id[np.random.choice(len(test_topics_num_id), sample_size, replace=False)]
-    contents = test_contents_num_id[np.random.choice(len(test_contents_num_id), sample_size, replace=False)]
-
-    topics = np.repeat(topics, sample_size)
-    contents = np.tile(contents, sample_size)
-    cor = has_correlations(contents, topics)
-
-    return topics, contents, cor.astype(np.float64)
+    return obtain_general_square_sample(sample_size, has_correlation_test_contents, has_correlation_test_topics, test_contents_num_id, test_topics_num_id)
 
 gc.collect()
