@@ -260,6 +260,15 @@ def has_close_correlations_train(content_num_ids, topic_num_ids):
 def has_close_correlations_test(content_num_ids, topic_num_ids):
     return data_bert.has_correlations_general(content_num_ids, topic_num_ids, has_close_correlation_test_contents, has_close_correlation_test_topics)
 
+def has_further_correlations(content_num_ids, topic_num_ids):
+    return data_bert.has_correlations_general(content_num_ids, topic_num_ids, has_further_correlation_contents, has_further_correlation_topics)
+
+def has_further_correlations_train(content_num_ids, topic_num_ids):
+    return data_bert.has_correlations_general(content_num_ids, topic_num_ids, has_further_correlation_train_contents, has_further_correlation_train_topics)
+
+def has_further_correlations_test(content_num_ids, topic_num_ids):
+    return data_bert.has_correlations_general(content_num_ids, topic_num_ids, has_further_correlation_test_contents, has_further_correlation_test_topics)
+
 def obtain_train_sample(one_sample_size, zero_sample_size):
     return data_bert.obtain_general_sample(one_sample_size, zero_sample_size, has_close_correlation_train_contents, has_close_correlation_train_topics, data_bert.train_contents_num_id, data_bert.train_topics_num_id)
 
