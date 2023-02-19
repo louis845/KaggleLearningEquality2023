@@ -20,17 +20,21 @@ class Model(tf.keras.Model):
 
         # standard stuff
         self.dropout0 = tf.keras.layers.GaussianDropout(rate=0.2)
+
         self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu")
         self.dropout1 = tf.keras.layers.Dropout(rate=0.1)
         self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu")
         self.dropout2 = tf.keras.layers.Dropout(rate=0.1)
-
         # the results of dense2 will be plugged into this.
         self.denseOvershoot = tf.keras.layers.Dense(units=128, activation="relu")
         self.dropoutOvershoot = tf.keras.layers.Dropout(rate=0.1)
         self.finalOvershoot = tf.keras.layers.Dense(units=1, activation="sigmoid")
 
-        # dense3 takes in the combined input of dense1 and denseOvershoot
+        # dense1_fp takes in the combined input of dense0 and denseOvershoot
+        self.dense1_fp = tf.keras.layers.Dense(units=units_size, activation="relu")
+        self.dropout1_fp = tf.keras.layers.Dropout(rate=0.1)
+        self.dense2_fp = tf.keras.layers.Dense(units=units_size, activation="relu")
+        self.dropout2_fp = tf.keras.layers.Dropout(rate=0.1)
         self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu")
         self.dropout3 = tf.keras.layers.Dropout(rate=0.1)
         self.dense4 = tf.keras.layers.Dense(units=128)
@@ -67,15 +71,17 @@ class Model(tf.keras.Model):
         embedding_result = self.concat_layer(
             [contents_description, contents_title, contents_lang, topics_description, topics_title, topics_lang])
 
-        t = self.dropout0(embedding_result, training=training)
-        t = self.dropout1(self.dense1(t), training=training)
+        first_layer = self.dropout0(embedding_result, training=training)
+        t = self.dropout1(self.dense1(first_layer), training=training)
         res_dropout2 = self.dropout2(self.dense2(t), training=training)
 
         overshoot_128result = self.dropoutOvershoot(self.denseOvershoot(res_dropout2), training=training)
         overshoot_result = self.finalOvershoot(overshoot_128result)
 
 
-        t = self.dropout3(self.dense3( tf.concat([t, overshoot_128result], axis = -1) ), training=training)
+        t = self.dropout1_fp(self.dense1_fp(tf.concat([first_layer, overshoot_128result], axis=-1)), training=training)
+        t = self.dropout2_fp(self.dense2_fp(t), training=training)
+        t = self.dropout3(self.dense3(t), training=training)
         t = self.dropout4(self.relu4(self.dense4(t)), training=training)
         t = self.dense5(t)
         if training and actual_y is not None:  # here we use overestimation training method for the set
