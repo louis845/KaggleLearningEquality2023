@@ -213,8 +213,8 @@ def generate_further_proximity_correlations():
 
 generate_topics_grouping_info()
 generate_topics_contents_correlations()
-generate_proximity_structure(proximity_structure, distance = 3)
-generate_proximity_structure(further_proximity_structure, distance = 5)
+generate_proximity_structure(proximity_structure, distance = 2)
+generate_proximity_structure(further_proximity_structure, distance = 3)
 
 if os.path.isdir(config.resources_path + "data_bert_tree/"):
     has_close_correlation_topics = np.load(config.resources_path + "data_bert_tree/has_close_correlation_topics.npy")

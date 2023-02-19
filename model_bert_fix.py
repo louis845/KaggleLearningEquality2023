@@ -243,7 +243,7 @@ class Model(tf.keras.Model):
             # if actual_y is 1 we use the pinvmean, to encourage low prob topics to move
             # close to 1. if actual_y is 0 we use pmean, to encourage high prob topics to
             # move close to 0
-            proba = tf.math.multiply(pinvmean * tf.constant(actual_y), pmean * tf.constant(1 - actual_y))
+            proba = tf.math.add(pinvmean * tf.constant(actual_y), pmean * tf.constant(1 - actual_y))
             return proba
         else: # here we just return the probabilities normally. the probability will be computed as the max inside the set
             return tf.squeeze(tf.reduce_max(t, axis = 1), axis = 1)
