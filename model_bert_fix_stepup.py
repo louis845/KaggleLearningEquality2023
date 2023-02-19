@@ -223,7 +223,7 @@ class Model(tf.keras.Model):
 
         # eval other test metrics
         if self.custom_metrics is not None:
-            self.custom_metrics.update_metrics(self, limit_sq, self.sample_generation_functions)
+            self.custom_metrics.update_metrics(self, limit_sq, self.sample_generation_functions, self.sample_overshoot_generation_functions)
 
         # early stopping
         if (self.custom_stopping_func is not None) and self.custom_stopping_func.evaluate(self.custom_metrics, self):
