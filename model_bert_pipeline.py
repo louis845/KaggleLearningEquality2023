@@ -48,7 +48,7 @@ def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func =
     model = model_bert_fix_stepup.Model(units_size = 512)
     modeldir = config.training_models_path + model_name
 
-    training_sampler = model_bert_fix_stepup.TrainingSampler(embedded_vectors_folder = config.resources_path + "bert_embedded_vectors/bert_vectorized_L6_H128/",
+    training_sampler = model_bert_fix.TrainingSampler(embedded_vectors_folder = config.resources_path + "bert_embedded_vectors/bert_vectorized_L6_H128/",
                                    contents_one_hot_file = config.resources_path + "one_hot_languages/contents_lang_train.npy",
                                    topics_one_hot_file = config.resources_path + "one_hot_languages/topics_lang_train.npy", device = "cpu")
     print("postsampler")
