@@ -5,6 +5,7 @@ import tensorflow as tf
 import numpy as np
 import config
 import gc
+import data_bert_sampler
 #
 
 class Model(tf.keras.Model):
@@ -55,6 +56,8 @@ class Model(tf.keras.Model):
 
         self.train_sample_generation = data_bert.obtain_train_sample
         self.train_sample_square_generation = data_bert.obtain_train_sample
+
+        self.state_is_final = False
 
     # for training, we feed in actual_y to overdetermine the predictions. if actual_y is not fed in,
     # usual gradient descent will be used. actual_y should be a (batch_size x 2) numpy array, where
@@ -124,32 +127,19 @@ class Model(tf.keras.Model):
         self.prev_entropy = None
 
         # saves the functions that generates whether a tuple (topic, content) is correlated.
-        self.sample_generation_functions = {
-            "train_sample": data_bert.obtain_train_sample,
-            "test_sample": data_bert.obtain_test_sample,
-            "train_square_sample": data_bert.obtain_train_square_sample,
-            "test_square_sample": data_bert.obtain_test_square_sample
-        }
+        self.tuple_choice_sampler = data_bert_sampler.default_sampler_instance
 
         # generates the overshoot functions
-        self.sample_overshoot_generation_functions = {
-            "train_sample": data_bert_tree_struct.obtain_train_sample,
-            "test_sample": data_bert_tree_struct.obtain_test_sample,
-            "train_square_sample": data_bert_tree_struct.obtain_train_square_sample,
-            "test_square_sample": data_bert_tree_struct.obtain_test_square_sample
-        }
-        # a function to test whether or not the tuple has correlations in the overshoot sense
-        self.sample_overshoot_testing_function = data_bert_tree_struct.has_close_correlations
+        self.tuple_choice_sampler_overshoot = data_bert_sampler.default_sampler_overshoot2_instance
 
     # custom_generation_functions should be a dict, e.g. {"train_sample": data_bert.obtain_train_sample,
     #             "test_sample": data_bert.obtain_test_sample,
     #             "train_square_sample": data_bert.obtain_train_square_sample,
     #             "test_square_sample": data_bert.obtain_test_square_sample}
-    def set_training_params(self, training_zero_sample_size=1000, training_one_sample_size=1000, training_max_size=None,
+    def set_training_params(self, training_sample_size=15000, training_max_size=None,
                             training_sampler=None, custom_metrics=None, custom_stopping_func=None,
-                            custom_generation_functions=None, custom_overshoot_generation_functions=None, custom_overshoot_testing_function=None):
-        self.training_one_sample_size = training_one_sample_size
-        self.training_zero_sample_size = training_zero_sample_size
+                            custom_tuple_choice_sampler=None, custom_tuple_choice_sampler_overshoot=None):
+        self.training_sample_size = training_sample_size
         self.training_max_size = training_max_size
         if training_sampler is not None:
             self.training_sampler = training_sampler
@@ -158,70 +148,85 @@ class Model(tf.keras.Model):
             self.custom_metrics = custom_metrics
         if custom_stopping_func is not None:
             self.custom_stopping_func = custom_stopping_func
-        if custom_generation_functions is not None:
-            self.sample_generation_functions = custom_generation_functions
-        if custom_overshoot_generation_functions is not None:
-            self.sample_overshoot_generation_functions = custom_overshoot_generation_functions
-        if custom_overshoot_testing_function is not None:
-            self.sample_overshoot_testing_function = custom_overshoot_testing_function
+        if custom_tuple_choice_sampler is not None:
+            self.tuple_choice_sampler = custom_tuple_choice_sampler
+        if custom_tuple_choice_sampler_overshoot is not None:
+            self.tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot
 
     def train_step(self, data):
         for k in range(50):
             # two pass, we first compute on overshoot only, and then compute on the full thing
-            topics, contents, cors = self.sample_overshoot_generation_functions["train_sample"](
-                one_sample_size=self.training_one_sample_size,
-                zero_sample_size=self.training_zero_sample_size)
-            input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
-            cors = np.tile(cors, 2)
-            y = tf.constant(cors)
+            if not self.state_is_final:
+                topics, contents, cors, class_ids = self.tuple_choice_sampler_overshoot.obtain_train_sample(
+                    self.training_sample_size)
+                input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
+                cors = np.tile(cors, 2)
+                y = tf.constant(cors)
 
-            with tf.GradientTape() as tape:
-                y_pred = self(input_data, training=True)[:, 1]
-                loss = self.loss(y, y_pred)
-            trainable_vars = self.trainable_weights
-            gradients = tape.gradient(loss, trainable_vars)
-            self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+                with tf.GradientTape() as tape:
+                    y_pred = self(input_data, training=True)[:, 1]
+                    loss = self.loss(y, y_pred)
+                trainable_vars = self.trainable_weights
+                gradients = tape.gradient(loss, trainable_vars)
+                self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+            else:
+                topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample((2 * self.training_sample_size) // 3)
+                topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(self.training_sample_size // 3)
+                topics = np.concatenate([topics, topics2])
+                contents = np.concatenate([contents, contents2])
+                class_ids = np.concatenate([class_ids, class_ids2])
 
-            topics, contents, cors = self.sample_generation_functions["train_sample"](
-                one_sample_size=self.training_one_sample_size,
-                zero_sample_size=self.training_zero_sample_size)
-            input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
-            cors = np.tile(cors, 2)
-            cors2 = np.tile(self.sample_overshoot_testing_function(contents, topics), 2)
-            y = tf.constant(np.concatenate([np.expand_dims(cors, axis = 1), np.expand_dims(cors2, axis = 1)], axis=1))
+                input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
 
-            with tf.GradientTape() as tape:
-                y_pred = self(input_data, training=True)
-                loss = self.loss(y, y_pred)
-            trainable_vars = self.trainable_weights
-            gradients = tape.gradient(loss, trainable_vars)
-            self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+                y0 = np.tile(self.tuple_choice_sampler.has_correlations(contents, topics, class_ids), 2)
+                y1 = np.tile(self.tuple_choice_sampler_overshoot.has_correlations(contents, topics, class_ids), 2)
+
+                y = tf.constant(np.concatenate([np.expand_dims(y0, 1), np.expand_dims(y1, 1)], axis = 1))
+
+                with tf.GradientTape() as tape:
+                    y_pred = self(input_data, training=True)
+                    loss = self.loss(y, y_pred)
+                trainable_vars = self.trainable_weights
+                gradients = tape.gradient(loss, trainable_vars)
+                self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 
         if self.training_max_size is None:
             limit = 9223372036854775807
             limit_sq = 9223372036854775807
         else:
-            limit = self.training_max_size // 2
-            limit_sq = int(np.sqrt(self.training_max_size))
+            limit = self.training_max_size
 
         # evaluation at larger subset
-        topics, contents, cors = self.sample_generation_functions["train_sample"](
-            one_sample_size=self.training_one_sample_size,
-            zero_sample_size=self.training_zero_sample_size)
-        input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
-        cors = np.tile(cors, 2)
-        cors2 = np.tile(self.sample_overshoot_testing_function(contents, topics), 2)
-        y = tf.constant(np.concatenate([np.expand_dims(cors, axis=1), np.expand_dims(cors2, axis=1)], axis=1))
-        y_pred = self(input_data)
-        self.entropy_large_set.update_state(y, y_pred)
+        if not self.state_is_final:
+            topics, contents, cors, class_ids = self.tuple_choice_sampler_overshoot.obtain_train_sample(min(len(data_bert.train_contents), limit))
+            input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
+            cors = np.tile(cors, 2)
+            y = tf.constant(cors)
+            y_pred = self(input_data, training=True)[:, 1]
+            self.entropy_large_set.update_state(y, y_pred)
+        else:
+            topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
+                (2 * self.training_sample_size) // 3)
+            topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
+                self.training_sample_size // 3)
+            topics = np.concatenate([topics, topics2])
+            contents = np.concatenate([contents, contents2])
+            class_ids = np.concatenate([class_ids, class_ids2])
+
+            input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
+
+            y0 = np.tile(self.tuple_choice_sampler.has_correlations(contents, topics, class_ids), 2)
+            y1 = np.tile(self.tuple_choice_sampler_overshoot.has_correlations(contents, topics, class_ids), 2)
+
+            y = tf.constant(np.concatenate([np.expand_dims(y0, 1), np.expand_dims(y1, 1)], axis=1))
+            y_pred = self(input_data, training=True)
+            self.entropy_large_set.update_state(y, y_pred)
 
         new_entropy = self.entropy_large_set.result()
         if (self.prev_entropy is not None) and new_entropy > self.prev_entropy * 1.05:
             print(
-                "---------------------------------WARNING: Training problem: entropy has increased! Reverting training....---------------------------------")
-            self.load_weights(config.training_models_path + "temp_ckpt/prev_ckpt")
+                "---------------------------------WARNING: Training problem: entropy has increased! ---------------------------------")
         else:
-            self.save_weights(config.training_models_path + "temp_ckpt/prev_ckpt")
             self.prev_entropy = new_entropy
 
         for m in self.metrics:
@@ -229,131 +234,128 @@ class Model(tf.keras.Model):
 
         # eval other test metrics
         if self.custom_metrics is not None:
-            self.custom_metrics.update_metrics(self, limit_sq, self.sample_generation_functions, self.sample_overshoot_generation_functions)
+            self.custom_metrics.update_metrics(self, limit)
 
         # early stopping
         if (self.custom_stopping_func is not None) and self.custom_stopping_func.evaluate(self.custom_metrics, self):
             self.stop_training = True
 
         # Return a dict mapping metric names to current value
-        return {**{m.name: m.result() for m in self.metrics},
+        temp_final_val = 0.7 if self.state_is_final else 0.3
+        return {"is_final":temp_final_val, **{m.name: m.result() for m in self.metrics},
                 "entropy_large_set": self.entropy_large_set.result(), **self.custom_metrics.obtain_metrics()}
 
     @property
     def metrics(self):
         return [self.accuracy, self.precision, self.recall, self.entropy]
 
-class DefaultMetrics(model_bert_fix.CustomMetrics):
+class DynamicMetrics(model_bert_fix.CustomMetrics):
+
+    TRAIN = 1
+    TRAIN_SQUARE = 2
+    TEST = 3
+    TEST_SQUARE = 4
+    TRAIN_OVERSHOOT = 5
+    TRAIN_SQUARE_OVERSHOOT = 6
+    TEST_OVERSHOOT = 7
+    TEST_SQUARE_OVERSHOOT = 8
+
     def __init__(self):
         model_bert_fix.CustomMetrics.__init__(self)
-        threshold = 0.5
+        self.metrics = [] # a lists of dicts, containing the metrics, and the data_bert_sampler.SamplerBase which contains the metric
 
-        self.test_precision = tf.keras.metrics.Precision(name="test_precision", thresholds=threshold)
-        self.test_recall = tf.keras.metrics.Recall(name="test_recall", thresholds=threshold)
+    def add_metric(self, name, tuple_choice_sampler, tuple_choice_sampler_overshoot, sample_choice = TEST, threshold = 0.5):
+        accuracy = tf.keras.metrics.BinaryAccuracy(name = name + "_accuracy", threshold=threshold)
+        precision = tf.keras.metrics.Precision(name = name + "_precision", thresholds=threshold)
+        recall = tf.keras.metrics.Recall(name = name + "_recall", thresholds=threshold)
+        entropy = tf.keras.metrics.BinaryCrossentropy(name = name + "_entropy")
 
-        self.test_small_precision = tf.keras.metrics.Precision(name="test_small_precision", thresholds=threshold)
-        self.test_small_recall = tf.keras.metrics.Recall(name="test_small_recall", thresholds=threshold)
-        self.test_small_accuracy = tf.keras.metrics.BinaryAccuracy(name="test_small_accuracy", threshold=threshold)
-        self.test_small_entropy = tf.keras.metrics.BinaryCrossentropy(name="test_small_entropy")
+        accuracy_nolang = tf.keras.metrics.BinaryAccuracy(name=name + "_accuracy_nolang", threshold=threshold)
+        precision_nolang = tf.keras.metrics.Precision(name=name + "_precision_nolang", thresholds=threshold)
+        recall_nolang = tf.keras.metrics.Recall(name=name + "_recall_nolang", thresholds=threshold)
+        entropy_nolang = tf.keras.metrics.BinaryCrossentropy(name=name + "_entropy_nolang")
+        self.metrics.append({"metrics": [accuracy, precision, recall, entropy, accuracy_nolang, precision_nolang, recall_nolang, entropy_nolang], "sampler": tuple_choice_sampler, "sampler_overshoot": tuple_choice_sampler_overshoot, "sample_choice": sample_choice})
 
-        self.no_lang_test_precision = tf.keras.metrics.Precision(name="no_lang_test_precision", thresholds=threshold)
-        self.no_lang_test_recall = tf.keras.metrics.Recall(name="no_lang_test_recall", thresholds=threshold)
+    def update_metrics(self, model, sample_size_limit):
+        for k in range(len(self.metrics)):
+            kmetrics = self.metrics[k]["metrics"]
+            sampler = self.metrics[k]["sampler"]
+            sampler_overshoot = self.metrics[k]["sampler_overshoot"]
+            sample_choice = self.metrics[k]["sample_choice"]
 
-        self.no_lang_test_small_precision = tf.keras.metrics.Precision(name="no_lang_test_small_precision",
-                                                                       thresholds=threshold)
-        self.no_lang_test_small_recall = tf.keras.metrics.Recall(name="no_lang_test_small_recall", thresholds=threshold)
-        self.no_lang_test_small_accuracy = tf.keras.metrics.BinaryAccuracy(name="no_lang_test_small_accuracy",
-                                                                           threshold=threshold)
-        self.no_lang_test_small_entropy = tf.keras.metrics.BinaryCrossentropy(name="no_lang_test_small_entropy")
+            if sample_choice <= 4:
+                if sample_choice == DynamicMetrics.TRAIN:
+                    topics, contents, cors, class_id = sampler.obtain_test_sample(min(60000, sample_size_limit))
+                elif sample_choice == DynamicMetrics.TRAIN_SQUARE:
+                    topics, contents, cors, class_id = sampler.obtain_train_sample(min(360000, sample_size_limit))
+                elif sample_choice == DynamicMetrics.TEST:
+                    topics, contents, cors, class_id = sampler.obtain_test_sample(min(60000, sample_size_limit))
+                elif sample_choice == DynamicMetrics.TEST_SQUARE:
+                    topics, contents, cors, class_id = sampler.obtain_train_sample(min(360000, sample_size_limit))
+                input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
+                y = tf.constant(cors)
+                y_pred = model(input_data)[:, 0]
+            else:
+                if sample_choice == DynamicMetrics.TRAIN_OVERSHOOT:
+                    topics, contents, cors, class_id = sampler_overshoot.obtain_test_sample(min(60000, sample_size_limit))
+                elif sample_choice == DynamicMetrics.TRAIN_SQUARE_OVERSHOOT:
+                    topics, contents, cors, class_id = sampler_overshoot.obtain_train_sample(min(360000, sample_size_limit))
+                elif sample_choice == DynamicMetrics.TEST_OVERSHOOT:
+                    topics, contents, cors, class_id = sampler_overshoot.obtain_test_sample(min(60000, sample_size_limit))
+                elif sample_choice == DynamicMetrics.TEST_SQUARE_OVERSHOOT:
+                    topics, contents, cors, class_id = sampler_overshoot.obtain_train_sample(min(360000, sample_size_limit))
+                input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
+                y = tf.constant(cors)
+                y_pred = model(input_data)[:, 1]
 
-        self.test_overshoot_precision = tf.keras.metrics.Precision(name="test_overshoot_precision", thresholds=threshold)
-        self.test_overshoot_recall = tf.keras.metrics.Recall(name="test_overshoot_recall", thresholds=threshold)
-        self.test_overshoot_small_precision = tf.keras.metrics.Precision(name="test_overshoot_small_precision", thresholds=threshold)
-        self.test_overshoot_small_recall = tf.keras.metrics.Recall(name="test_overshoot_small_recall", thresholds=threshold)
+            for j in range(4):
+                kmetrics[j].update_state(y, y_pred)
 
-    # updates the metrics based on the current state of the model.
-    def update_metrics(self, model, limit_sq, sample_generation_functions, sample_overshoot_generation_functions):
-        # evaluation at other points
-
-        # test square sample
-        topics, contents, cors = sample_generation_functions["test_square_sample"](min(600, limit_sq))
-        input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)[:, 0]
-        for m in self.test_metrics:
-            m.update_state(y, y_pred)
-
-        input_data = self.training_sampler.obtain_input_data_filter_lang(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)[:, 0]
-        for m in self.no_lang_test_metrics:
-            m.update_state(y, y_pred)
-
-        # test same sample
-        topics, contents, cors = sample_generation_functions["test_sample"](30000, 30000)
-        input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)[:, 0]
-        for m in self.test_small_metrics:
-            m.update_state(y, y_pred)
-
-        input_data = self.training_sampler.obtain_input_data_filter_lang(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)[:, 0]
-        for m in self.no_lang_test_small_metrics:
-            m.update_state(y, y_pred)
-
-        # test square sample overshoot
-        topics, contents, cors = sample_overshoot_generation_functions["test_square_sample"](min(600, limit_sq))
-        input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)[:, 1]
-        for m in self.test_overshoot_metrics:
-            m.update_state(y, y_pred)
-
-        # test same sample overshoot
-        topics, contents, cors = sample_overshoot_generation_functions["test_sample"](30000, 30000)
-        input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)[:, 1]
-        for m in self.test_overshoot_small_metrics:
-            m.update_state(y, y_pred)
-
-        gc.collect()
-
-    # returns a dictionary containing the last evaluation of the metrics, and the model
+            input_data = self.training_sampler.obtain_input_data_filter_lang(topics_id=topics, contents_id=contents)
+            if sample_choice <= 4:
+                y_pred = model(input_data)[:, 0]
+            else:
+                y_pred = model(input_data)[:, 1]
+            for j in range(4,8):
+                kmetrics[j].update_state(y, y_pred)
+            gc.collect()
     def obtain_metrics(self):
-        return {** {m.name: m.result() for m in self.test_metrics},
-        ** {m.name: m.result() for m in self.test_small_metrics},
-        ** {m.name: m.result() for m in self.no_lang_test_metrics},
-        ** {m.name: m.result() for m in self.no_lang_test_small_metrics},
-        **{m.name: m.result() for m in self.test_overshoot_metrics},
-        **{m.name: m.result() for m in self.test_overshoot_small_metrics}}
+        metrics_list = [metr for met in self.metrics for metr in met["metrics"]]
+        return {m.name: m.result() for m in metrics_list}
 
-    @property
-    def test_metrics(self):
-        return [self.test_precision, self.test_recall]
+    def get_test_entropy_metric(self):
+        for k in range(len(self.metrics)):
+            mmetrics = self.metrics[k]["metrics"]
+            if mmetrics[3].name == "test_entropy":
+                return mmetrics[3].result()
+        raise Exception("No metrics found!")
 
-    @property
-    def test_small_metrics(self):
-        return [self.test_small_accuracy, self.test_small_precision, self.test_small_recall, self.test_small_entropy]
+    def get_test_overshoot_entropy_metric(self):
+        for k in range(len(self.metrics)):
+            mmetrics = self.metrics[k]["metrics"]
+            if mmetrics[3].name == "test_overshoot_entropy":
+                return mmetrics[3].result()
+        raise Exception("No metrics found!")
 
-    @property
-    def no_lang_test_metrics(self):
-        return [self.no_lang_test_precision, self.no_lang_test_recall]
+default_metrics = DynamicMetrics()
+default_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST)
+default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
+default_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
+default_metrics.add_metric("test_square_overshoot", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_SQUARE_OVERSHOOT)
 
-    @property
-    def no_lang_test_small_metrics(self):
-        return [self.no_lang_test_small_accuracy, self.no_lang_test_small_precision, self.no_lang_test_small_recall,
-                self.no_lang_test_small_entropy]
-
-    @property
-    def test_overshoot_metrics(self):
-        return [self.test_overshoot_precision, self.test_overshoot_recall]
-
-    @property
-    def test_overshoot_small_metrics(self):
-        return [self.test_overshoot_small_precision, self.test_overshoot_small_recall]
+def obtain_overshoot_metric_instance(training_tuple_sampler, training_tuple_sampler_overshoot):
+    overshoot_metrics = DynamicMetrics()
+    default_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice=DynamicMetrics.TEST)
+    default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice=DynamicMetrics.TEST_SQUARE)
+    default_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_instance,
+                               data_bert_sampler.default_sampler_overshoot2_instance,
+                               sample_choice=DynamicMetrics.TEST_OVERSHOOT)
+    default_metrics.add_metric("test_square_overshoot", data_bert_sampler.default_sampler_instance,
+                               data_bert_sampler.default_sampler_overshoot2_instance,
+                               sample_choice=DynamicMetrics.TEST_SQUARE_OVERSHOOT)
+    default_metrics.add_metric("test_in_train_sample", training_tuple_sampler, training_tuple_sampler_overshoot, sample_choice=DynamicMetrics.TEST)
+    default_metrics.add_metric("test_square_in_train_sample", training_tuple_sampler, training_tuple_sampler_overshoot, sample_choice=DynamicMetrics.TEST_SQUARE)
+    return overshoot_metrics
 
 class DefaultStoppingFunc(model_bert_fix.CustomStoppingFunc):
     def __init__(self, model_dir):
@@ -363,7 +365,10 @@ class DefaultStoppingFunc(model_bert_fix.CustomStoppingFunc):
 
     def evaluate(self, custom_metrics, model):
         if self.lowest_test_small_entropy is not None:
-            current_test_small_entropy = custom_metrics.test_small_entropy.result()
+            if not model.state_is_final:
+                current_test_small_entropy = custom_metrics.get_test_overshoot_entropy_metric()
+            else:
+                current_test_small_entropy = custom_metrics.get_test_entropy_metric()
             if current_test_small_entropy < self.lowest_test_small_entropy:
                 self.lowest_test_small_entropy = current_test_small_entropy
                 model.save_weights(self.model_dir + "/best_test_small_entropy.ckpt")
@@ -371,8 +376,14 @@ class DefaultStoppingFunc(model_bert_fix.CustomStoppingFunc):
             elif current_test_small_entropy > self.lowest_test_small_entropy * 1.005:
                 self.countdown += 1
                 if self.countdown > 10:
-                    return True
+                    if not model.state_is_final:
+                        model.state_is_final = True
+                    else:
+                        return True
         else:
-            current_test_small_entropy = custom_metrics.test_small_entropy.result()
+            if not model.state_is_final:
+                current_test_small_entropy = custom_metrics.get_test_overshoot_entropy_metric()
+            else:
+                current_test_small_entropy = custom_metrics.get_test_entropy_metric()
             self.lowest_test_small_entropy = current_test_small_entropy
         return False

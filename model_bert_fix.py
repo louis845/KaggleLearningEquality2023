@@ -21,12 +21,13 @@ given content.
 """
 import tensorflow
 import tensorflow as tf
-import tensorflow_hub as hub
-import tensorflow_text as text
 import numpy as np
 import data_bert
 import config
 import gc
+
+import data_bert_sampler
+
 
 class TrainingSampler:
     # loads the data as tf tensors from the folders specified. note that the embedded_vectors_folder require "/" at the end.
@@ -158,7 +159,7 @@ class Model(tf.keras.Model):
         self.dropout2 = tf.keras.layers.Dropout(rate=0.1)
         self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu")
         self.dropout3 = tf.keras.layers.Dropout(rate=0.1)
-        self.dense4 = tf.keras.layers.Dense(units=128)
+        self.dense4 = tf.keras.layers.Dense(units= (units_size // 4))
         self.relu4 = tf.keras.layers.ReLU()
         self.dropout4 = tf.keras.layers.Dropout(rate=0.1)
         self.dense5 = tf.keras.layers.Dense(units=1, activation="sigmoid")
@@ -175,32 +176,19 @@ class Model(tf.keras.Model):
         self.custom_metrics = None
         self.custom_stopping_func = None
 
-        self.train_sample_generation = data_bert.obtain_train_sample
-        self.train_sample_square_generation = data_bert.obtain_train_sample
-    def compile(self):
+        self.tuple_choice_sampler = None
+    def compile(self, weight_decay = 0.01):
         super(Model, self).compile(run_eagerly=True)
         # loss and optimizer
         self.loss = tf.keras.losses.BinaryCrossentropy()
-        self.optimizer = tf.keras.optimizers.experimental.AdamW(learning_rate=0.0005, weight_decay = 0.01)
+        self.optimizer = tf.keras.optimizers.experimental.AdamW(learning_rate=0.0005, weight_decay = weight_decay)
         self.training_one_sample_size = 1000
         self.training_zero_sample_size = 1000
         self.prev_entropy = None
 
-        # saves the functions that generates whether a tuple (topic, content) is correlated.
-        self.sample_generation_functions = {
-            "train_sample": data_bert.obtain_train_sample,
-            "test_sample": data_bert.obtain_test_sample,
-            "train_square_sample": data_bert.obtain_train_square_sample,
-            "test_square_sample": data_bert.obtain_test_square_sample
-        }
-
-    # custom_generation_functions should be a dict, e.g. {"train_sample": data_bert.obtain_train_sample,
-    #             "test_sample": data_bert.obtain_test_sample,
-    #             "train_square_sample": data_bert.obtain_train_square_sample,
-    #             "test_square_sample": data_bert.obtain_test_square_sample}
-    def set_training_params(self, training_zero_sample_size=1000, training_one_sample_size=1000, training_max_size = None, training_sampler = None, custom_metrics = None, custom_stopping_func = None, custom_generation_functions = None):
-        self.training_one_sample_size = training_one_sample_size
-        self.training_zero_sample_size = training_zero_sample_size
+        self.tuple_choice_sampler = data_bert_sampler.default_sampler_instance
+    def set_training_params(self, training_sample_size = 15000, training_max_size = None, training_sampler = None, custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None):
+        self.training_sample_size = training_sample_size
         self.training_max_size = training_max_size
         if training_sampler is not None:
             self.training_sampler = training_sampler
@@ -209,8 +197,8 @@ class Model(tf.keras.Model):
             self.custom_metrics = custom_metrics
         if custom_stopping_func is not None:
             self.custom_stopping_func = custom_stopping_func
-        if custom_generation_functions is not None:
-            self.sample_generation_functions = custom_generation_functions
+        if custom_tuple_choice_sampler is not None:
+            self.tuple_choice_sampler = custom_tuple_choice_sampler
 
     # for training, we feed in actual_y to overdetermine the predictions. if actual_y is not fed in,
     # usual gradient descent will be used. actual_y should be a (batch_size) numpy vector.
@@ -266,8 +254,7 @@ class Model(tf.keras.Model):
         return self.dense4(t) # now we have a batch_size x set_size x 128 tensor, the last axis is reduced to 128 by linear transforms.
     def train_step(self, data):
         for k in range(50):
-            topics, contents, cors = self.sample_generation_functions["train_sample"](one_sample_size = self.training_one_sample_size,
-                                                                   zero_sample_size = self.training_zero_sample_size)
+            topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(self.training_sample_size)
             input_data = self.training_sampler.obtain_input_data_both(topics_id = topics, contents_id = contents)
             cors = np.tile(cors, 2)
             y = tf.constant(cors)
@@ -285,12 +272,10 @@ class Model(tf.keras.Model):
             limit = 9223372036854775807
             limit_sq = 9223372036854775807
         else:
-            limit = self.training_max_size // 2
-            limit_sq = int(np.sqrt(self.training_max_size))
+            limit = self.training_max_size
         
         # evaluation at larger subset
-        topics, contents, cors = self.sample_generation_functions["train_sample"](min(len(data_bert.train_contents), limit),
-                                                               min(len(data_bert.train_contents), limit))
+        topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(min(len(data_bert.train_contents), limit))
         cors = np.tile(cors, 2)
         input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
         y = tf.constant(cors)
@@ -310,7 +295,7 @@ class Model(tf.keras.Model):
 
         # eval other test metrics
         if self.custom_metrics is not None:
-            self.custom_metrics.update_metrics(self, limit_sq, self.sample_generation_functions)
+            self.custom_metrics.update_metrics(self, limit)
 
         # early stopping
         if (self.custom_stopping_func is not None) and self.custom_stopping_func.evaluate(self.custom_metrics, self):
@@ -330,7 +315,7 @@ class CustomMetrics:
 
     # updates the metrics based on the current state of the model. limit_sq is the limit of the square size.
     # sample_generation_functions are the dict of 4 functions for the train set, train square set, test set, test square set etc.
-    def update_metrics(self, model, limit_sq, sample_generation_functions):
+    def update_metrics(self, model, sample_size_limit):
         pass
 
     # returns a dictionary containing the last evaluation of the metrics, and the model
@@ -340,120 +325,76 @@ class CustomMetrics:
     def set_training_sampler(self, training_sampler):
         self.training_sampler = training_sampler
 
+class DynamicMetrics(CustomMetrics):
 
-class DefaultMetrics(CustomMetrics):
+    TRAIN = 1
+    TRAIN_SQUARE = 2
+    TEST = 3
+    TEST_SQUARE = 4
+
     def __init__(self):
         CustomMetrics.__init__(self)
-        threshold = 0.5
-        self.full_accuracy = tf.keras.metrics.BinaryAccuracy(name="full_accuracy", threshold=threshold)
-        self.full_precision = tf.keras.metrics.Precision(name="full_precision", thresholds=threshold)
-        self.full_recall = tf.keras.metrics.Recall(name="full_recall", thresholds=threshold)
-        self.full_entropy = tf.keras.metrics.BinaryCrossentropy(name="full_entropy")
+        self.metrics = [] # a lists of dicts, containing the metrics, and the data_bert_sampler.SamplerBase which contains the metric
 
-        self.test_precision = tf.keras.metrics.Precision(name="test_precision", thresholds=threshold)
-        self.test_recall = tf.keras.metrics.Recall(name="test_recall", thresholds=threshold)
+    def add_metric(self, name, tuple_choice_sampler, sample_choice = TEST, threshold = 0.5):
+        accuracy = tf.keras.metrics.BinaryAccuracy(name = name + "_accuracy", threshold=threshold)
+        precision = tf.keras.metrics.Precision(name = name + "_precision", thresholds=threshold)
+        recall = tf.keras.metrics.Recall(name = name + "_recall", thresholds=threshold)
+        entropy = tf.keras.metrics.BinaryCrossentropy(name = name + "_entropy")
 
-        self.test_small_precision = tf.keras.metrics.Precision(name="test_small_precision", thresholds=threshold)
-        self.test_small_recall = tf.keras.metrics.Recall(name="test_small_recall", thresholds=threshold)
-        self.test_small_accuracy = tf.keras.metrics.BinaryAccuracy(name="test_small_accuracy", threshold=threshold)
-        self.test_small_entropy = tf.keras.metrics.BinaryCrossentropy(name="test_small_entropy")
+        accuracy_nolang = tf.keras.metrics.BinaryAccuracy(name=name + "_accuracy_nolang", threshold=threshold)
+        precision_nolang = tf.keras.metrics.Precision(name=name + "_precision_nolang", thresholds=threshold)
+        recall_nolang = tf.keras.metrics.Recall(name=name + "_recall_nolang", thresholds=threshold)
+        entropy_nolang = tf.keras.metrics.BinaryCrossentropy(name=name + "_entropy_nolang")
+        self.metrics.append({"metrics": [accuracy, precision, recall, entropy, accuracy_nolang, precision_nolang, recall_nolang, entropy_nolang], "sampler": tuple_choice_sampler, "sample_choice": sample_choice})
 
-        self.no_lang_full_accuracy = tf.keras.metrics.BinaryAccuracy(name="no_lang_full_accuracy", threshold=threshold)
-        self.no_lang_full_precision = tf.keras.metrics.Precision(name="no_lang_full_precision", thresholds=threshold)
-        self.no_lang_full_recall = tf.keras.metrics.Recall(name="no_lang_full_recall", thresholds=threshold)
-        self.no_lang_full_entropy = tf.keras.metrics.BinaryCrossentropy(name="no_lang_full_entropy")
+    def update_metrics(self, model, sample_size_limit):
+        for k in range(len(self.metrics)):
+            kmetrics = self.metrics[k]["metrics"]
+            sampler = self.metrics[k]["sampler"]
+            sample_choice = self.metrics[k]["sample_choice"]
 
-        self.no_lang_test_precision = tf.keras.metrics.Precision(name="no_lang_test_precision", thresholds=threshold)
-        self.no_lang_test_recall = tf.keras.metrics.Recall(name="no_lang_test_recall", thresholds=threshold)
+            if sample_choice == DynamicMetrics.TRAIN:
+                topics, contents, cors, class_id = sampler.obtain_test_sample(min(60000, sample_size_limit))
+            elif sample_choice == DynamicMetrics.TRAIN_SQUARE:
+                topics, contents, cors, class_id = sampler.obtain_train_sample(min(360000, sample_size_limit))
+            elif sample_choice == DynamicMetrics.TEST:
+                topics, contents, cors, class_id = sampler.obtain_test_sample(min(60000, sample_size_limit))
+            elif sample_choice == DynamicMetrics.TEST_SQUARE:
+                topics, contents, cors, class_id = sampler.obtain_train_sample(min(360000, sample_size_limit))
+            input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
+            y = tf.constant(cors)
+            y_pred = model(input_data)
+            for j in range(4):
+                kmetrics[j].update_state(y, y_pred)
 
-        self.no_lang_test_small_precision = tf.keras.metrics.Precision(name="no_lang_test_small_precision",
-                                                                       thresholds=threshold)
-        self.no_lang_test_small_recall = tf.keras.metrics.Recall(name="no_lang_test_small_recall", thresholds=threshold)
-        self.no_lang_test_small_accuracy = tf.keras.metrics.BinaryAccuracy(name="no_lang_test_small_accuracy",
-                                                                           threshold=threshold)
-        self.no_lang_test_small_entropy = tf.keras.metrics.BinaryCrossentropy(name="no_lang_test_small_entropy")
-
-    # updates the metrics based on the current state of the model.
-    def update_metrics(self, model, limit_sq, sample_generation_functions):
-        # evaluation at other points
-        # train square sample
-        topics, contents, cors = sample_generation_functions["train_square_sample"](min(600, limit_sq))
-        input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)
-        for m in self.full_metrics:
-            m.update_state(y, y_pred)
-
-        input_data = self.training_sampler.obtain_input_data_filter_lang(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)
-        for m in self.no_lang_full_metrics:
-            m.update_state(y, y_pred)
-
-        # test square sample
-        topics, contents, cors = sample_generation_functions["test_square_sample"](min(600, limit_sq))
-        input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)
-        for m in self.test_metrics:
-            m.update_state(y, y_pred)
-
-        input_data = self.training_sampler.obtain_input_data_filter_lang(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)
-        for m in self.no_lang_test_metrics:
-            m.update_state(y, y_pred)
-
-        # test same sample
-        topics, contents, cors = sample_generation_functions["test_sample"](30000, 30000)
-        input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)
-        for m in self.test_small_metrics:
-            m.update_state(y, y_pred)
-
-        input_data = self.training_sampler.obtain_input_data_filter_lang(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)
-        for m in self.no_lang_test_small_metrics:
-            m.update_state(y, y_pred)
-
-        gc.collect()
-
-    # returns a dictionary containing the last evaluation of the metrics, and the model
+            input_data = self.training_sampler.obtain_input_data_filter_lang(topics_id=topics, contents_id=contents)
+            y_pred = model(input_data)
+            for j in range(4,8):
+                kmetrics[j].update_state(y, y_pred)
     def obtain_metrics(self):
-        return {** {m.name: m.result() for m in self.full_metrics},
-        ** {m.name: m.result() for m in self.test_metrics},
-        ** {m.name: m.result() for m in self.test_small_metrics},
-        ** {m.name: m.result() for m in self.no_lang_full_metrics},
-        ** {m.name: m.result() for m in self.no_lang_test_metrics},
-        ** {m.name: m.result() for m in self.no_lang_test_small_metrics}}
+        metrics_list = [metr for met in self.metrics for metr in met["metrics"]]
+        return {m.name: m.result() for m in metrics_list}
 
-    @property
-    def test_metrics(self):
-        return [self.test_precision, self.test_recall]
+    def get_test_entropy_metric(self):
+        for k in range(len(self.metrics)):
+            mmetrics = self.metrics[k]["metrics"]
+            if mmetrics[3].name == "test_entropy":
+                return mmetrics[3].result()
+        raise Exception("No metrics found!")
 
-    @property
-    def test_small_metrics(self):
-        return [self.test_small_accuracy, self.test_small_precision, self.test_small_recall, self.test_small_entropy]
+default_metrics = DynamicMetrics()
+default_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST)
+default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
 
-    @property
-    def full_metrics(self):
-        return [self.full_accuracy, self.full_precision, self.full_recall, self.full_entropy]
-
-    @property
-    def no_lang_test_metrics(self):
-        return [self.no_lang_test_precision, self.no_lang_test_recall]
-
-    @property
-    def no_lang_test_small_metrics(self):
-        return [self.no_lang_test_small_accuracy, self.no_lang_test_small_precision, self.no_lang_test_small_recall,
-                self.no_lang_test_small_entropy]
-
-    @property
-    def no_lang_full_metrics(self):
-        return [self.no_lang_full_accuracy, self.no_lang_full_precision, self.no_lang_full_recall,
-                self.no_lang_full_entropy]
+# create overshoot metrics, given the sampler used for selecting the tuples
+def obtain_overshoot_metric_instance(training_tuple_sampler):
+    overshoot_metrics = DynamicMetrics()
+    default_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice=DynamicMetrics.TEST)
+    default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice=DynamicMetrics.TEST_SQUARE)
+    default_metrics.add_metric("test_in_train_sample", training_tuple_sampler, sample_choice=DynamicMetrics.TEST)
+    default_metrics.add_metric("test_square_in_train_sample", training_tuple_sampler, sample_choice=DynamicMetrics.TEST_SQUARE)
+    return overshoot_metrics
 
 class CustomStoppingFunc:
     def __init__(self, model_dir):
@@ -471,7 +412,7 @@ class DefaultStoppingFunc(CustomStoppingFunc):
 
     def evaluate(self, custom_metrics, model):
         if self.lowest_test_small_entropy is not None:
-            current_test_small_entropy = custom_metrics.test_small_entropy.result()
+            current_test_small_entropy = custom_metrics.get_test_entropy_metric()
             if current_test_small_entropy < self.lowest_test_small_entropy:
                 self.lowest_test_small_entropy = current_test_small_entropy
                 model.save_weights(self.model_dir + "/best_test_small_entropy.ckpt")
@@ -481,89 +422,6 @@ class DefaultStoppingFunc(CustomStoppingFunc):
                 if self.countdown > 10:
                     return True
         else:
-            current_test_small_entropy = custom_metrics.test_small_entropy.result()
+            current_test_small_entropy = custom_metrics.get_test_entropy_metric()
             self.lowest_test_small_entropy = current_test_small_entropy
         return False
-
-
-class OvershootMetrics(CustomMetrics):
-    def __init__(self):
-        CustomMetrics.__init__(self)
-        threshold = 0.5
-
-        self.test_accuracy = tf.keras.metrics.Precision(name="test_accuracy", thresholds=threshold)
-        self.test_precision = tf.keras.metrics.Precision(name="test_precision", thresholds=threshold)
-        self.test_recall = tf.keras.metrics.Recall(name="test_recall", thresholds=threshold)
-
-        self.test_small_precision = tf.keras.metrics.Precision(name="test_small_precision", thresholds=threshold)
-        self.test_small_recall = tf.keras.metrics.Recall(name="test_small_recall", thresholds=threshold)
-        self.test_small_accuracy = tf.keras.metrics.BinaryAccuracy(name="test_small_accuracy", threshold=threshold)
-        self.test_small_entropy = tf.keras.metrics.BinaryCrossentropy(name="test_small_entropy")
-
-        self.original_test_accuracy = tf.keras.metrics.Precision(name="original_test_accuracy", thresholds=threshold)
-        self.original_test_precision = tf.keras.metrics.Precision(name="original_test_precision", thresholds=threshold)
-        self.original_test_recall = tf.keras.metrics.Recall(name="original_test_recall", thresholds=threshold)
-
-        self.original_test_small_precision = tf.keras.metrics.Precision(name="original_test_small_precision", thresholds=threshold)
-        self.original_test_small_recall = tf.keras.metrics.Recall(name="original_test_small_recall", thresholds=threshold)
-        self.original_test_small_accuracy = tf.keras.metrics.BinaryAccuracy(name="original_test_small_accuracy", threshold=threshold)
-        self.original_test_small_entropy = tf.keras.metrics.BinaryCrossentropy(name="original_test_small_entropy")
-
-    # updates the metrics based on the current state of the model.
-    def update_metrics(self, model, limit_sq, sample_generation_functions):
-        # test square sample
-        topics, contents, cors = sample_generation_functions["test_square_sample"](min(600, limit_sq))
-        input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)
-        for m in self.test_metrics:
-            m.update_state(y, y_pred)
-
-        # test same sample
-        topics, contents, cors = sample_generation_functions["test_sample"](30000, 30000)
-        input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)
-        for m in self.test_small_metrics:
-            m.update_state(y, y_pred)
-
-        # original (no overshoot) test square sample
-        topics, contents, cors = data_bert.obtain_test_square_sample(min(600, limit_sq))
-        input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)
-        for m in self.original_test_metrics:
-            m.update_state(y, y_pred)
-
-        # original (no overshoot) test same sample
-        topics, contents, cors = data_bert.obtain_test_sample(30000, 30000)
-        input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
-        y_pred = model(input_data)
-        for m in self.original_test_small_metrics:
-            m.update_state(y, y_pred)
-
-        gc.collect()
-
-    # returns a dictionary containing the last evaluation of the metrics, and the model
-    def obtain_metrics(self):
-        return {** {m.name: m.result() for m in self.test_metrics},
-            ** {m.name: m.result() for m in self.test_small_metrics},
-            ** {m.name: m.result() for m in self.original_test_metrics},
-            ** {m.name: m.result() for m in self.original_test_small_metrics}}
-
-    @property
-    def test_metrics(self):
-        return [self.test_accuracy, self.test_precision, self.test_recall]
-
-    @property
-    def test_small_metrics(self):
-        return [self.test_small_accuracy, self.test_small_precision, self.test_small_recall, self.test_small_entropy]
-
-    @property
-    def original_test_metrics(self):
-        return [self.original_test_accuracy, self.original_test_precision, self.original_test_recall]
-
-    @property
-    def original_test_small_metrics(self):
-        return [self.original_test_small_accuracy, self.original_test_small_precision, self.original_test_small_recall, self.original_test_small_entropy]
