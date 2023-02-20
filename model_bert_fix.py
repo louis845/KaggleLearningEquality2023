@@ -390,10 +390,10 @@ default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_inst
 # create overshoot metrics, given the sampler used for selecting the tuples
 def obtain_overshoot_metric_instance(training_tuple_sampler):
     overshoot_metrics = DynamicMetrics()
-    default_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice=DynamicMetrics.TEST)
-    default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice=DynamicMetrics.TEST_SQUARE)
-    default_metrics.add_metric("test_in_train_sample", training_tuple_sampler, sample_choice=DynamicMetrics.TEST)
-    default_metrics.add_metric("test_square_in_train_sample", training_tuple_sampler, sample_choice=DynamicMetrics.TEST_SQUARE)
+    overshoot_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice=DynamicMetrics.TEST)
+    overshoot_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice=DynamicMetrics.TEST_SQUARE)
+    overshoot_metrics.add_metric("test_in_train_sample", training_tuple_sampler, sample_choice=DynamicMetrics.TEST)
+    overshoot_metrics.add_metric("test_square_in_train_sample", training_tuple_sampler, sample_choice=DynamicMetrics.TEST_SQUARE)
     return overshoot_metrics
 
 class CustomStoppingFunc:

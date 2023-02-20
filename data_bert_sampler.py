@@ -103,13 +103,13 @@ class MixedSampler(SamplerBase):
         for k in range(len(self.sampler_probas)):
             proba = self.sampler_probas[k]
             sampler = self.sampler_list[k]
-            topics, contents, cors = sampler.obtain_train_sample(int(sample_size * proba))
+            topics, contents, cors, class_ids = sampler.obtain_train_sample(int(sample_size * proba))
             class_ids = np.repeat(k, len(cors))
             sample_topics.append(topics)
             sample_contents.append(contents)
             sample_cors.append(cors)
             sample_class_ids.append(class_ids)
-        return np.concatenate(sample_topics), np.concatenate(sample_contents), np.concatenate(cors), np.concatenate(sample_class_ids)
+        return np.concatenate(sample_topics), np.concatenate(sample_contents), np.concatenate(sample_cors), np.concatenate(sample_class_ids)
 
     # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
     def obtain_test_sample(self, sample_size):
@@ -120,13 +120,13 @@ class MixedSampler(SamplerBase):
         for k in range(len(self.sampler_probas)):
             proba = self.sampler_probas[k]
             sampler = self.sampler_list[k]
-            topics, contents, cors = sampler.obtain_test_sample(int(sample_size * proba))
+            topics, contents, cors, class_ids = sampler.obtain_test_sample(int(sample_size * proba))
             class_ids = np.repeat(k, len(cors))
             sample_topics.append(topics)
             sample_contents.append(contents)
             sample_cors.append(cors)
             sample_class_ids.append(class_ids)
-        return np.concatenate(sample_topics), np.concatenate(sample_contents), np.concatenate(cors), np.concatenate(
+        return np.concatenate(sample_topics), np.concatenate(sample_contents), np.concatenate(sample_cors), np.concatenate(
             sample_class_ids)
 
     # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
@@ -138,13 +138,13 @@ class MixedSampler(SamplerBase):
         for k in range(len(self.sampler_probas)):
             proba = self.sampler_probas[k]
             sampler = self.sampler_list[k]
-            topics, contents, cors = sampler.obtain_train_square_sample(int(sample_size * proba))
+            topics, contents, cors, class_ids = sampler.obtain_train_square_sample(int(sample_size * proba))
             class_ids = np.repeat(k, len(cors))
             sample_topics.append(topics)
             sample_contents.append(contents)
             sample_cors.append(cors)
             sample_class_ids.append(class_ids)
-        return np.concatenate(sample_topics), np.concatenate(sample_contents), np.concatenate(cors), np.concatenate(
+        return np.concatenate(sample_topics), np.concatenate(sample_contents), np.concatenate(sample_cors), np.concatenate(
             sample_class_ids)
 
     # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
@@ -156,18 +156,20 @@ class MixedSampler(SamplerBase):
         for k in range(len(self.sampler_probas)):
             proba = self.sampler_probas[k]
             sampler = self.sampler_list[k]
-            topics, contents, cors = sampler.obtain_test_square_sample(int(sample_size * proba))
+            topics, contents, cors, class_ids = sampler.obtain_test_square_sample(int(sample_size * proba))
             class_ids = np.repeat(k, len(cors))
             sample_topics.append(topics)
             sample_contents.append(contents)
             sample_cors.append(cors)
             sample_class_ids.append(class_ids)
-        return np.concatenate(sample_topics), np.concatenate(sample_contents), np.concatenate(cors), np.concatenate(
+        return np.concatenate(sample_topics), np.concatenate(sample_contents), np.concatenate(sample_cors), np.concatenate(
             sample_class_ids)
 
     # given the (content_id, topic_id, class) tuple, determine whether or not there is a correlation between them.
     def has_correlations(self, content_num_ids, topic_num_ids, class_ids):
-        cors = np.zeros(shape = len(class_ids))
+        if class_ids is None:
+            return self.sampler_list[0].sample_verification_function(content_num_ids, topic_num_ids)
+        cors = np.zeros(shape = len(content_num_ids))
         for k in range(len(self.sampler_probas)):
             k_class_locations = (class_ids == k)
             cors[k_class_locations] = self.sampler_list[k].has_correlations(content_num_ids[k_class_locations], topic_num_ids[k_class_locations], None)

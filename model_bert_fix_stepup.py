@@ -172,14 +172,20 @@ class Model(tf.keras.Model):
             else:
                 topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample((2 * self.training_sample_size) // 3)
                 topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(self.training_sample_size // 3)
+
+                y0_1 = self.tuple_choice_sampler.has_correlations(contents, topics, class_ids)
+                y1_1 = self.tuple_choice_sampler_overshoot.has_correlations(contents, topics, class_ids)
+
+                y0_2 = self.tuple_choice_sampler.has_correlations(contents2, topics2, class_ids2)
+                y1_2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, class_ids2)
+
+                y0 = np.tile(np.concatenate([y0_1, y0_2]), 2)
+                y1 = np.tile(np.concatenate([y1_1, y1_2]), 2)
+
                 topics = np.concatenate([topics, topics2])
                 contents = np.concatenate([contents, contents2])
-                class_ids = np.concatenate([class_ids, class_ids2])
 
                 input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
-
-                y0 = np.tile(self.tuple_choice_sampler.has_correlations(contents, topics, class_ids), 2)
-                y1 = np.tile(self.tuple_choice_sampler_overshoot.has_correlations(contents, topics, class_ids), 2)
 
                 y = tf.constant(np.concatenate([np.expand_dims(y0, 1), np.expand_dims(y1, 1)], axis = 1))
 
@@ -209,14 +215,20 @@ class Model(tf.keras.Model):
                 (2 * self.training_sample_size) // 3)
             topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
                 self.training_sample_size // 3)
+
+            y0_1 = self.tuple_choice_sampler.has_correlations(contents, topics, class_ids)
+            y1_1 = self.tuple_choice_sampler_overshoot.has_correlations(contents, topics, class_ids)
+
+            y0_2 = self.tuple_choice_sampler.has_correlations(contents2, topics2, class_ids2)
+            y1_2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, class_ids2)
+
+            y0 = np.tile(np.concatenate([y0_1, y0_2]), 2)
+            y1 = np.tile(np.concatenate([y1_1, y1_2]), 2)
+
             topics = np.concatenate([topics, topics2])
             contents = np.concatenate([contents, contents2])
-            class_ids = np.concatenate([class_ids, class_ids2])
 
             input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
-
-            y0 = np.tile(self.tuple_choice_sampler.has_correlations(contents, topics, class_ids), 2)
-            y1 = np.tile(self.tuple_choice_sampler_overshoot.has_correlations(contents, topics, class_ids), 2)
 
             y = tf.constant(np.concatenate([np.expand_dims(y0, 1), np.expand_dims(y1, 1)], axis=1))
             y_pred = self(input_data, training=True)
@@ -345,16 +357,16 @@ default_metrics.add_metric("test_square_overshoot", data_bert_sampler.default_sa
 
 def obtain_overshoot_metric_instance(training_tuple_sampler, training_tuple_sampler_overshoot):
     overshoot_metrics = DynamicMetrics()
-    default_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice=DynamicMetrics.TEST)
-    default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice=DynamicMetrics.TEST_SQUARE)
-    default_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_instance,
+    overshoot_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice=DynamicMetrics.TEST)
+    overshoot_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice=DynamicMetrics.TEST_SQUARE)
+    overshoot_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_instance,
                                data_bert_sampler.default_sampler_overshoot2_instance,
                                sample_choice=DynamicMetrics.TEST_OVERSHOOT)
-    default_metrics.add_metric("test_square_overshoot", data_bert_sampler.default_sampler_instance,
+    overshoot_metrics.add_metric("test_square_overshoot", data_bert_sampler.default_sampler_instance,
                                data_bert_sampler.default_sampler_overshoot2_instance,
                                sample_choice=DynamicMetrics.TEST_SQUARE_OVERSHOOT)
-    default_metrics.add_metric("test_in_train_sample", training_tuple_sampler, training_tuple_sampler_overshoot, sample_choice=DynamicMetrics.TEST)
-    default_metrics.add_metric("test_square_in_train_sample", training_tuple_sampler, training_tuple_sampler_overshoot, sample_choice=DynamicMetrics.TEST_SQUARE)
+    overshoot_metrics.add_metric("test_in_train_sample", training_tuple_sampler, training_tuple_sampler_overshoot, sample_choice=DynamicMetrics.TEST)
+    overshoot_metrics.add_metric("test_square_in_train_sample", training_tuple_sampler, training_tuple_sampler_overshoot, sample_choice=DynamicMetrics.TEST_SQUARE)
     return overshoot_metrics
 
 class DefaultStoppingFunc(model_bert_fix.CustomStoppingFunc):
