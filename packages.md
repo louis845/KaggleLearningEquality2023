@@ -1,13 +1,15 @@
 # Python packages used
 ## Python version 3.10
 ## Core packages:
-* numpy 1.24.1
-* pandas 1.5.2
-* scipy 1.10.0
-* matplotlib 3.6.3
-* scikit-learn 1.2.0
-* seaborn 0.12.2
+* numpy 1.21.6
+* pandas 1.3.5
+* scipy 1.7.3
+* matplotlib 3.5.2
+* scikit-learn 1.0.2
+* seaborn 0.11.2
 * cupy-cuda11x 11.5.0 (only for data_bert_gpu.py)
+* tensorflow 2.10.1
+* tensorflow-text 2.10.0
 ## Packages for natural language processing:
 These packages are used for translation (to English), and pretrained transformer models for NLP tasks.
 * Previous used packages (used in model_vectorizer_simple):
@@ -21,5 +23,6 @@ These packages are used for translation (to English), and pretrained transformer
   * BERT transformer model https://www.tensorflow.org/text/tutorials/classify_text_with_bert
   * Opus-MT pretrained models https://github.com/Helsinki-NLP/Opus-MT-train/tree/master/models (Creative Commons Attribution 4.0)
   * ctranslate2 2.24.0 https://github.com/OpenNMT/CTranslate2/blob/master/LICENSE (MIT License)
-  * sentencepiece 0.1.96 https://github.com/google/sentencepiece (Apache License 2.0)
-  * langdetect 1.0.9 https://github.com/Mimino666/langdetect (Apache License 2.0)
+  * sentencepiece 0.1.97 https://github.com/google/sentencepiece (Apache License 2.0)
+  * langid 1.1.6 https://github.com/saffsd/langid.py (BSD 2-Clause)
+  * autocorrect 2.6.1 https://github.com/filyp/autocorrect (LGPL v3)
