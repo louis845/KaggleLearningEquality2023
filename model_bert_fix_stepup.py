@@ -117,11 +117,11 @@ class Model(tf.keras.Model):
             return proba
         else:  # here we just return the probabilities normally. the probability will be computed as the max inside the set
             return tf.concat([tf.reduce_max(t, axis=1), tf.reduce_max(overshoot_result, axis=1)], axis = 1)
-    def compile(self):
+    def compile(self, weight_decay = 0.01, learning_rate = 0.0005):
         super(Model, self).compile(run_eagerly=True)
         # loss and optimizer
         self.loss = tf.keras.losses.BinaryCrossentropy()
-        self.optimizer = tf.keras.optimizers.experimental.AdamW(learning_rate=0.0005, weight_decay=0.01)
+        self.optimizer = tf.keras.optimizers.experimental.AdamW(learning_rate=learning_rate, weight_decay=weight_decay)
         self.training_one_sample_size = 1000
         self.training_zero_sample_size = 1000
         self.prev_entropy = None
@@ -395,13 +395,18 @@ class DefaultStoppingFunc(model_bert_fix.CustomStoppingFunc):
                         self.lowest_test_small_entropy = None
                         self.countdown = 0
                         self.equal_thresh = 0
+                        return True
                     else:
                         return True
             elif self.lowest_test_small_entropy * 0.9985 < current_test_small_entropy and current_test_small_entropy < self.lowest_test_small_entropy * 1.005:
                 self.equal_thresh += 1
-                if self.equal_thresh > 5:
+                if self.equal_thresh > 5 and not model.state_is_final:
                     self.equal_thresh = 0
                     self.lowest_test_small_entropy = self.lowest_test_small_entropy * 0.9985
+                elif self.equal_thresh > 60 and model.state_is_final:
+                    self.equal_thresh = 45
+                    self.lowest_test_small_entropy = self.lowest_test_small_entropy * 0.9985
+
         else:
             if not model.state_is_final:
                 current_test_small_entropy = custom_metrics.get_test_overshoot_entropy_metric()
