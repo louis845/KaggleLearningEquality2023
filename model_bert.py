@@ -1,7 +1,8 @@
 """
-A model for classifying topic-content correlations.
+A model for classifying topic-content correlations, WITH the BERT tokens as input. The BERT weights will be learnt alongside
+the methods used in model_bert_fix
 
-Model input: dimensions (batch_size x set_size x (bert_embedding_size*2+num_langs+bert_embedding_size*2+num_langs)) (ragged tensor).
+Model input: dimensions (batch_size x set_size x (bert_information)) (ragged tensor).
 
 The 0th axis is the batch size. The 1st axis is the set_size for the current input, which may vary for each different instance in the
 batch. The 2nd axis are the precomputed inputs from BERT embedding concatenated with the one-hot representation of languages. The order
@@ -21,13 +22,10 @@ given content.
 """
 import tensorflow
 import tensorflow as tf
-import tensorflow_text as text
-import tensorflow_hub as hub
 import numpy as np
 import data_bert
 import config
 import gc
-import model_bert_fix
 
 import data_bert_sampler
 
@@ -312,7 +310,23 @@ class Model(tf.keras.Model):
     def metrics(self):
         return [self.accuracy, self.precision, self.recall, self.entropy]
 
-class DynamicMetrics(model_bert_fix.CustomMetrics):
+class CustomMetrics:
+    def __init__(self):
+        self.training_sampler = None
+
+    # updates the metrics based on the current state of the model. limit_sq is the limit of the square size.
+    # sample_generation_functions are the dict of 4 functions for the train set, train square set, test set, test square set etc.
+    def update_metrics(self, model, sample_size_limit):
+        pass
+
+    # returns a dictionary containing the last evaluation of the metrics, and the model
+    def obtain_metrics(self):
+        pass
+
+    def set_training_sampler(self, training_sampler):
+        self.training_sampler = training_sampler
+
+class DynamicMetrics(CustomMetrics):
 
     TRAIN = 1
     TRAIN_SQUARE = 2
@@ -320,7 +334,7 @@ class DynamicMetrics(model_bert_fix.CustomMetrics):
     TEST_SQUARE = 4
 
     def __init__(self):
-        model_bert_fix.CustomMetrics.__init__(self)
+        CustomMetrics.__init__(self)
         self.metrics = [] # a lists of dicts, containing the metrics, and the data_bert_sampler.SamplerBase which contains the metric
 
     def add_metric(self, name, tuple_choice_sampler, sample_choice = TEST, threshold = 0.5):
