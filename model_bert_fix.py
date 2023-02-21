@@ -153,16 +153,16 @@ class Model(tf.keras.Model):
 
         # standard stuff
         self.dropout0 = tf.keras.layers.GaussianDropout(rate=0.2)
-        self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu")
+        self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense1")
         self.dropout1 = tf.keras.layers.Dropout(rate=0.1)
-        self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu")
+        self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense2")
         self.dropout2 = tf.keras.layers.Dropout(rate=0.1)
-        self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu")
+        self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense3")
         self.dropout3 = tf.keras.layers.Dropout(rate=0.1)
-        self.dense4 = tf.keras.layers.Dense(units= (units_size // 4))
+        self.dense4 = tf.keras.layers.Dense(units= (units_size // 4), name = "dense4")
         self.relu4 = tf.keras.layers.ReLU()
         self.dropout4 = tf.keras.layers.Dropout(rate=0.1)
-        self.dense5 = tf.keras.layers.Dense(units=1, activation="sigmoid")
+        self.dense5 = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "dense5")
 
 
         # loss functions and eval metrics

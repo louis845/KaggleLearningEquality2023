@@ -77,7 +77,7 @@ def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func =
 
     del model, training_sampler
 
-train_model("direct_model")
+"""train_model("direct_model")
 
 tuple_choice_sampler = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance])
 metrics = model_bert_fix.obtain_overshoot_metric_instance(tuple_choice_sampler)
@@ -85,7 +85,7 @@ train_model("overshoot2", custom_metrics = metrics, custom_tuple_choice_sampler 
 
 tuple_choice_sampler = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, data_bert_sampler.default_sampler_overshoot3_instance], sampler_probas=[0.5, 1.0/3, 1.0/6])
 metrics = model_bert_fix.obtain_overshoot_metric_instance(tuple_choice_sampler)
-train_model("overshoot23", custom_metrics = metrics, custom_tuple_choice_sampler =  tuple_choice_sampler)
+train_model("overshoot23", custom_metrics = metrics, custom_tuple_choice_sampler =  tuple_choice_sampler)"""
 
 train_model_stepup("direct_model_stepup")
 

@@ -17,31 +17,31 @@ class Model(tf.keras.Model):
         self.training_max_size = None
 
         # concatenation layer (acts on the final axis, meaning putting together contents_description, content_title, content_lang etc..)
-        self.concat_layer = tf.keras.layers.Concatenate(axis=2)
+        self.concat_layer = tf.keras.layers.Concatenate(axis=2, name = "initial_concat")
 
         # standard stuff
         self.dropout0 = tf.keras.layers.GaussianDropout(rate=0.2)
 
-        self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu")
+        self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense1")
         self.dropout1 = tf.keras.layers.Dropout(rate=0.1)
-        self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu")
+        self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense2")
         self.dropout2 = tf.keras.layers.Dropout(rate=0.1)
         # the results of dense2 will be plugged into this.
-        self.denseOvershoot = tf.keras.layers.Dense(units=128, activation="relu")
+        self.denseOvershoot = tf.keras.layers.Dense(units=128, activation="relu", name = "denseOvershoot")
         self.dropoutOvershoot = tf.keras.layers.Dropout(rate=0.1)
-        self.finalOvershoot = tf.keras.layers.Dense(units=1, activation="sigmoid")
+        self.finalOvershoot = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "finalOvershoot")
 
         # dense1_fp takes in the combined input of dense0 and denseOvershoot
-        self.dense1_fp = tf.keras.layers.Dense(units=units_size, activation="relu")
+        self.dense1_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense1_fp")
         self.dropout1_fp = tf.keras.layers.Dropout(rate=0.1)
-        self.dense2_fp = tf.keras.layers.Dense(units=units_size, activation="relu")
+        self.dense2_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense2_fp")
         self.dropout2_fp = tf.keras.layers.Dropout(rate=0.1)
-        self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu")
+        self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense3_fp")
         self.dropout3 = tf.keras.layers.Dropout(rate=0.1)
-        self.dense4 = tf.keras.layers.Dense(units=128)
+        self.dense4 = tf.keras.layers.Dense(units=128, name = "dense4")
         self.relu4 = tf.keras.layers.ReLU()
         self.dropout4 = tf.keras.layers.Dropout(rate=0.1)
-        self.dense5 = tf.keras.layers.Dense(units=1, activation="sigmoid")
+        self.dense5 = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "dense5")
 
         # loss functions and eval metrics
         self.accuracy = tf.keras.metrics.BinaryAccuracy(name="accuracy")
@@ -374,6 +374,7 @@ class DefaultStoppingFunc(model_bert_fix.CustomStoppingFunc):
         model_bert_fix.CustomStoppingFunc.__init__(self, model_dir)
         self.lowest_test_small_entropy = None
         self.countdown = 0
+        self.equal_thresh = 0
 
     def evaluate(self, custom_metrics, model):
         if self.lowest_test_small_entropy is not None:
@@ -385,13 +386,22 @@ class DefaultStoppingFunc(model_bert_fix.CustomStoppingFunc):
                 self.lowest_test_small_entropy = current_test_small_entropy
                 model.save_weights(self.model_dir + "/best_test_small_entropy.ckpt")
                 self.countdown = 0
+                self.equal_thresh = 0
             elif current_test_small_entropy > self.lowest_test_small_entropy * 1.005:
                 self.countdown += 1
                 if self.countdown > 10:
                     if not model.state_is_final:
                         model.state_is_final = True
+                        self.lowest_test_small_entropy = None
+                        self.countdown = 0
+                        self.equal_thresh = 0
                     else:
                         return True
+            elif self.lowest_test_small_entropy * 0.9985 < current_test_small_entropy and current_test_small_entropy < self.lowest_test_small_entropy * 1.005:
+                self.equal_thresh += 1
+                if self.equal_thresh > 5:
+                    self.equal_thresh = 0
+                    self.lowest_test_small_entropy = self.lowest_test_small_entropy * 0.9985
         else:
             if not model.state_is_final:
                 current_test_small_entropy = custom_metrics.get_test_overshoot_entropy_metric()
