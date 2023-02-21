@@ -70,7 +70,7 @@ def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func =
     callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_file, save_weights_only = False, verbose = 0, save_freq = 20)
     csv_logger = tf.keras.callbacks.CSVLogger(logging_file, separator=',', append=False)
 
-    hist = model.fit(np.array([1, 2]), epochs = 2, callbacks=[callback, csv_logger], verbose = 2, steps_per_epoch = 1)
+    hist = model.fit(np.array([1, 2]), epochs = 4000, callbacks=[callback, csv_logger], verbose = 2, steps_per_epoch = 1)
     ctime = time.time() - ctime
     print("finished first stepup time")
     print(ctime)
@@ -87,7 +87,7 @@ def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func =
                               custom_metrics=custom_metrics, custom_stopping_func=custom_stopping_func,
                               custom_tuple_choice_sampler=custom_tuple_choice_sampler,
                               custom_tuple_choice_sampler_overshoot=custom_tuple_choice_sampler_overshoot)
-    model.fit(np.array([1, 2]), initial_epoch=len(hist.history["accuracy"]),epochs=4, callbacks=[callback, csv_logger], verbose=2, steps_per_epoch=1)
+    model.fit(np.array([1, 2]), initial_epoch=len(hist.history["accuracy"]),epochs=4000, callbacks=[callback, csv_logger], verbose=2, steps_per_epoch=1)
     ctime = time.time() - ctime
     print("finished second stepup time")
     print(ctime)
