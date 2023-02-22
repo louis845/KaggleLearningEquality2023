@@ -6,6 +6,7 @@ import model_bert_fix_stepup
 import config
 import time
 import tensorflow as tf
+import tensorflow_models as tfm
 import numpy as np
 import pandas as pd
 import os
@@ -71,6 +72,24 @@ def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func =
 
     hist = model.fit(np.array([1, 2]), epochs = 4000, callbacks=[callback, csv_logger], verbose = 2, steps_per_epoch = 1)
     ctime = time.time() - ctime
+    print("finished first stepup time")
+    print(ctime)
+
+
+    ctime = time.time()
+    csv_logger = tf.keras.callbacks.CSVLogger(logging_file, separator=',', append=True)
+    model.compile(weight_decay = 0.001, learning_rate = tfm.optimization.lr_schedule.LinearWarmup(
+        warmup_learning_rate = 0,
+        after_warmup_lr_sched = 0.0005,
+        warmup_steps = 2000
+    ))
+    model.set_training_params(15000, training_sampler=training_sampler, training_max_size=75000,
+                              custom_metrics=custom_metrics, custom_stopping_func=custom_stopping_func,
+                              custom_tuple_choice_sampler=custom_tuple_choice_sampler,
+                              custom_tuple_choice_sampler_overshoot=custom_tuple_choice_sampler_overshoot)
+    model.fit(np.array([1, 2]), initial_epoch=len(hist.history["accuracy"]),epochs=4000, callbacks=[callback, csv_logger], verbose=2, steps_per_epoch=1)
+    ctime = time.time() - ctime
+    print("finished second stepup time")
     print(ctime)
 
     model.save_weights(modeldir + "/final_epoch.ckpt")
