@@ -355,13 +355,13 @@ class DynamicMetrics(CustomMetrics):
             sample_choice = self.metrics[k]["sample_choice"]
 
             if sample_choice == DynamicMetrics.TRAIN:
-                topics, contents, cors, class_id = sampler.obtain_test_sample(min(60000, sample_size_limit))
+                topics, contents, cors, class_id = sampler.obtain_train_sample(min(60000, sample_size_limit))
             elif sample_choice == DynamicMetrics.TRAIN_SQUARE:
-                topics, contents, cors, class_id = sampler.obtain_train_sample(min(360000, sample_size_limit))
+                topics, contents, cors, class_id = sampler.obtain_train_square_sample(min(360000, sample_size_limit))
             elif sample_choice == DynamicMetrics.TEST:
                 topics, contents, cors, class_id = sampler.obtain_test_sample(min(60000, sample_size_limit))
             elif sample_choice == DynamicMetrics.TEST_SQUARE:
-                topics, contents, cors, class_id = sampler.obtain_train_sample(min(360000, sample_size_limit))
+                topics, contents, cors, class_id = sampler.obtain_test_square_sample(min(360000, sample_size_limit))
             input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
             y = tf.constant(cors)
             y_pred = model(input_data)

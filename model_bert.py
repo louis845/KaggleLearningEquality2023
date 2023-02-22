@@ -16,12 +16,16 @@ The actual input is input=dict, where input["contents"]["description"], input["c
 are the tensors with same batch size, and each [k,:,:] size corresponds to the same single sample, and each [k,j,:] denotes the same
 tuple in the same sample.
 
+This model does not use the languages one hot information, to attain larger generalizability.
+
 Model output:
 A (batch_size) tensor (vector) containing the predicted probabilities. The model tries to predict whether the set of topics contain the
 given content.
 """
 import tensorflow
 import tensorflow as tf
+import tensorflow_text as text
+import tensorflow_hub as hub
 import numpy as np
 import data_bert
 import config
@@ -31,114 +35,60 @@ import data_bert_sampler
 
 
 class TrainingSampler:
-    # loads the data as tf tensors from the folders specified. note that the embedded_vectors_folder require "/" at the end.
+    # loads the data tokens as tf tensors from the folders specified. note that the embedded_vectors_folder require "/" at the end.
     # for memory constrained GPU devices, we load the files into np arrays instead. in this case, it is not possible to
     # perform setwise operations.
-    def __init__(self, embedded_vectors_folder, contents_one_hot_file, topics_one_hot_file, device = "gpu"):
+    def __init__(self, tokens_folder, device = "gpu"):
         self.device = device
+        self.model_input_params = ["input_mask", "input_type_ids", "input_word_ids"]
+        self.contents_description = {}
+        self.contents_title = {}
+        self.topics_description = {}
+        self.topics_title = {}
         if device == "gpu":
-            self.contents_description = tf.constant(np.load(embedded_vectors_folder + "contents_description.npy"))
-            self.contents_title = tf.constant(np.load(embedded_vectors_folder + "contents_title.npy"))
-            self.topics_description = tf.constant(np.load(embedded_vectors_folder + "topics_description.npy"))
-            self.topics_title = tf.constant(np.load(embedded_vectors_folder + "topics_title.npy"))
-
-            self.contents_one_hot = tf.constant(np.load(contents_one_hot_file))
-            self.topics_one_hot = tf.constant(np.load(topics_one_hot_file))
+            for model_input in self.model_input_params:
+                self.contents_description[model_input] = tf.constant(np.load(tokens_folder + "contents_description/" + model_input + ".npy"))
+                self.contents_title[model_input] = tf.constant(np.load(tokens_folder + "contents_title/" + model_input + ".npy"))
+                self.topics_description[model_input] = tf.constant(np.load(tokens_folder + "topics_description/" + model_input + ".npy"))
+                self.topics_title[model_input] = tf.constant(np.load(tokens_folder + "topics_title/" + model_input + ".npy"))
         else:
-            self.contents_description = np.load(embedded_vectors_folder + "contents_description.npy")
-            self.contents_title = np.load(embedded_vectors_folder + "contents_title.npy")
-            self.topics_description = np.load(embedded_vectors_folder + "topics_description.npy")
-            self.topics_title = np.load(embedded_vectors_folder + "topics_title.npy")
-
-            self.contents_one_hot = np.load(contents_one_hot_file)
-            self.topics_one_hot = np.load(topics_one_hot_file)
+            for model_input in self.model_input_params:
+                self.contents_description[model_input] = np.load(tokens_folder + "contents_description/" + model_input + ".npy")
+                self.contents_title[model_input] = np.load(tokens_folder + "contents_title/" + model_input + ".npy")
+                self.topics_description[model_input] = np.load(tokens_folder + "topics_description/" + model_input + ".npy")
+                self.topics_title[model_input] = np.load(tokens_folder + "topics_title/" + model_input + ".npy")
 
     def obtain_total_num_topics(self):
-        return self.topics_one_hot.shape[0]
+        return self.contents_description[self.model_input_params[0]].shape[0]
 
     def obtain_total_num_contents(self):
-        return self.contents_one_hot.shape[0]
+        return self.contents_description[self.model_input_params[0]].shape[0]
 
     # topics_id and contents_id are the indices for topics and contents. each entry in the batch is (topics_id[k], contents_id[k]).
     # the indices are in integer form (corresponding to data_bert.train_contents_num_id etc).
     def obtain_input_data(self, topics_id, contents_id):
-        if self.device == "gpu":
-            input_data = {
-                "contents": {
-                    "description": tf.gather(self.contents_description, np.expand_dims(contents_id, axis = 1), axis=0),
-                    "title": tf.gather(self.contents_title, np.expand_dims(contents_id, axis = 1), axis=0),
-                    "lang": tf.gather(self.contents_one_hot, np.expand_dims(contents_id, axis = 1), axis=0)
-                },
-                "topics": {
-                    "description": tf.gather(self.topics_description, np.expand_dims(topics_id, axis = 1), axis=0),
-                    "title": tf.gather(self.topics_title, np.expand_dims(topics_id, axis = 1), axis=0),
-                    "lang": tf.gather(self.topics_one_hot, np.expand_dims(topics_id, axis = 1), axis=0)
-                }
-            }
-        else:
-            input_data = {
-                "contents": {
-                    "description": tf.constant(np.take(self.contents_description, np.expand_dims(contents_id, axis=1), axis=0)),
-                    "title": tf.constant(np.take(self.contents_title, np.expand_dims(contents_id, axis=1), axis=0)),
-                    "lang": tf.constant(np.take(self.contents_one_hot, np.expand_dims(contents_id, axis=1), axis=0))
-                },
-                "topics": {
-                    "description": tf.constant(np.take(self.topics_description, np.expand_dims(topics_id, axis=1), axis=0)),
-                    "title": tf.constant(np.take(self.topics_title, np.expand_dims(topics_id, axis=1), axis=0)),
-                    "lang": tf.constant(np.take(self.topics_one_hot, np.expand_dims(topics_id, axis=1), axis=0))
-                }
-            }
-        return input_data
-
-    # same thing, except that the lang one-hot columns are all zeros.
-    def obtain_input_data_filter_lang(self, topics_id, contents_id):
-        if self.device == "gpu":
-            input_data = {
-                "contents": {
-                    "description": tf.gather(self.contents_description, np.expand_dims(contents_id, axis = 1), axis=0),
-                    "title": tf.gather(self.contents_title, np.expand_dims(contents_id, axis = 1), axis=0),
-                    "lang": tf.constant(np.zeros(shape = (len(contents_id), 1, self.contents_one_hot.shape[1])))
-                },
-                "topics": {
-                    "description": tf.gather(self.topics_description, np.expand_dims(topics_id, axis = 1), axis=0),
-                    "title": tf.gather(self.topics_title, np.expand_dims(topics_id, axis = 1), axis=0),
-                    "lang": tf.constant(np.zeros(shape = (len(topics_id), 1, self.contents_one_hot.shape[1])))
-                }
-            }
-        else:
-            input_data = {
-                "contents": {
-                    "description": tf.constant(np.take(self.contents_description, np.expand_dims(contents_id, axis=1), axis=0)),
-                    "title": tf.constant(np.take(self.contents_title, np.expand_dims(contents_id, axis=1), axis=0)),
-                    "lang": tf.constant(np.zeros(shape=(len(contents_id), 1, self.contents_one_hot.shape[1])))
-                },
-                "topics": {
-                    "description": tf.constant(np.take(self.topics_description, np.expand_dims(topics_id, axis=1), axis=0)),
-                    "title": tf.constant(np.take(self.topics_title, np.expand_dims(topics_id, axis=1), axis=0)),
-                    "lang": tf.constant(np.zeros(shape=(len(topics_id), 1, self.contents_one_hot.shape[1])))
-                }
-            }
-        return input_data
-
-    # obtain the version where both input data with lang and input data without lang exist.
-    def obtain_input_data_both(self, topics_id, contents_id):
-        with_lang = self.obtain_input_data(topics_id, contents_id)
-        no_lang = self.obtain_input_data_filter_lang(topics_id, contents_id)
-
         input_data = {
             "contents": {
-                "description": tf.concat([with_lang["contents"]["description"], no_lang["contents"]["description"]], axis = 0),
-                "title": tf.concat([with_lang["contents"]["title"], no_lang["contents"]["title"]], axis = 0),
-                "lang": tf.concat([with_lang["contents"]["lang"], no_lang["contents"]["lang"]], axis = 0)
+                "description": {},
+                "title": {},
             },
             "topics": {
-                "description": tf.concat([with_lang["topics"]["description"], no_lang["topics"]["description"]], axis = 0),
-                "title": tf.concat([with_lang["topics"]["title"], no_lang["topics"]["title"]], axis = 0),
-                "lang": tf.concat([with_lang["topics"]["lang"], no_lang["topics"]["lang"]], axis = 0)
+                "description": {},
+                "title": {},
             }
         }
-
-        del with_lang, no_lang
+        if self.device == "gpu":
+            for model_input in self.model_input_params:
+                input_data["contents"]["description"][model_input] = tf.gather(self.contents_description[model_input], contents_id, axis=0)
+                input_data["contents"]["title"][model_input] = tf.gather(self.contents_title[model_input], contents_id, axis=0)
+                input_data["topics"]["description"][model_input] = tf.gather(self.topics_description[model_input], topics_id, axis=0)
+                input_data["topics"]["title"][model_input] = tf.gather(self.topics_title[model_input], contents_id, axis=0)
+        else:
+            for model_input in self.model_input_params:
+                input_data["contents"]["description"][model_input] = tf.constant(self.contents_description[model_input][contents_id, :])
+                input_data["contents"]["title"][model_input] = tf.constant(self.contents_title[model_input][contents_id, :])
+                input_data["topics"]["description"][model_input] = tf.constant(self.topics_description[model_input][topics_id, :])
+                input_data["topics"]["title"][model_input] = tf.constant(self.topics_title[model_input][topics_id, :])
         return input_data
 
 class Model(tf.keras.Model):
@@ -148,6 +98,10 @@ class Model(tf.keras.Model):
 
         self.training_sampler = None
         self.training_max_size = None
+
+        # BERT layer.
+        self.bert_encoder_L12_H256 = hub.KerasLayer(
+            "/kaggle/input/kagglelearningequalitybertmodels/small_bert_bert_en_uncased_L-12_H-256_A-4_2", trainable = True)
 
         # concatenation layer (acts on the final axis, meaning putting together contents_description, content_title, content_lang etc..)
         self.concat_layer = tf.keras.layers.Concatenate(axis = 2)
@@ -178,11 +132,11 @@ class Model(tf.keras.Model):
         self.custom_stopping_func = None
 
         self.tuple_choice_sampler = None
-    def compile(self, weight_decay = 0.01):
+    def compile(self, weight_decay = 0.01, learning_rate = 0.0005):
         super(Model, self).compile(run_eagerly=True)
         # loss and optimizer
         self.loss = tf.keras.losses.BinaryCrossentropy()
-        self.optimizer = tf.keras.optimizers.experimental.AdamW(learning_rate=0.0005, weight_decay = weight_decay)
+        self.optimizer = tf.keras.optimizers.experimental.AdamW(learning_rate=learning_rate, weight_decay = weight_decay)
         self.training_one_sample_size = 1000
         self.training_zero_sample_size = 1000
         self.prev_entropy = None
@@ -206,12 +160,23 @@ class Model(tf.keras.Model):
     def call(self, data, training=False, actual_y = None):
         contents_description = data["contents"]["description"]
         contents_title = data["contents"]["title"]
-        contents_lang = data["contents"]["lang"]
         topics_description = data["topics"]["description"]
         topics_title = data["topics"]["title"]
-        topics_lang = data["topics"]["lang"]
-        # combine the (batch_size x set_size x (bert_embedding_size / num_langs)) tensors into (batch_size x set_size x (bert_embedding_size*2+num_langs+bert_embedding_size*2+num_langs))
-        embedding_result = self.concat_layer([contents_description, contents_title, contents_lang, topics_description, topics_title, topics_lang])
+
+        # feed them into the BERT
+        contents_description = self.bert_encoder_L12_H256(contents_description)["pooled_output"]
+        contents_title = self.bert_encoder_L12_H256(contents_title)["pooled_output"]
+        topics_description = self.bert_encoder_L12_H256(topics_description)["pooled_output"]
+        topics_title = self.bert_encoder_L12_H256(topics_title)["pooled_output"]
+
+        # now it would be an n x bert_embedding_size tensor. we expand it.
+        contents_description = tf.expand_dims(contents_description, axis=1)
+        contents_title = tf.expand_dims(contents_title, axis=1)
+        topics_description = tf.expand_dims(topics_description, axis=1)
+        topics_title = tf.expand_dims(topics_title, axis=1)
+
+        # combine the (batch_size x (bert_embedding_size / num_langs)) tensors into (batch_size x (bert_embedding_size*2+num_langs+bert_embedding_size*2+num_langs))
+        embedding_result = self.concat_layer([contents_description, contents_title, topics_description, topics_title])
 
         t = self.dropout0(embedding_result, training=training)
         t = self.dropout1(self.dense1(t), training=training)
@@ -256,8 +221,7 @@ class Model(tf.keras.Model):
     def train_step(self, data):
         for k in range(50):
             topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(self.training_sample_size)
-            input_data = self.training_sampler.obtain_input_data_both(topics_id = topics, contents_id = contents)
-            cors = np.tile(cors, 2)
+            input_data = self.training_sampler.obtain_input_data(topics_id = topics, contents_id = contents)
             y = tf.constant(cors)
 
             with tf.GradientTape() as tape:
@@ -277,8 +241,7 @@ class Model(tf.keras.Model):
 
         # evaluation at larger subset
         topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(min(len(data_bert.train_contents), limit))
-        cors = np.tile(cors, 2)
-        input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
+        input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
         y = tf.constant(cors)
         y_pred = self(input_data)
         self.entropy_large_set.update_state(y, y_pred)
@@ -342,12 +305,7 @@ class DynamicMetrics(CustomMetrics):
         precision = tf.keras.metrics.Precision(name = name + "_precision", thresholds=threshold)
         recall = tf.keras.metrics.Recall(name = name + "_recall", thresholds=threshold)
         entropy = tf.keras.metrics.BinaryCrossentropy(name = name + "_entropy")
-
-        accuracy_nolang = tf.keras.metrics.BinaryAccuracy(name=name + "_accuracy_nolang", threshold=threshold)
-        precision_nolang = tf.keras.metrics.Precision(name=name + "_precision_nolang", thresholds=threshold)
-        recall_nolang = tf.keras.metrics.Recall(name=name + "_recall_nolang", thresholds=threshold)
-        entropy_nolang = tf.keras.metrics.BinaryCrossentropy(name=name + "_entropy_nolang")
-        self.metrics.append({"metrics": [accuracy, precision, recall, entropy, accuracy_nolang, precision_nolang, recall_nolang, entropy_nolang], "sampler": tuple_choice_sampler, "sample_choice": sample_choice})
+        self.metrics.append({"metrics": [accuracy, precision, recall, entropy], "sampler": tuple_choice_sampler, "sample_choice": sample_choice})
 
     def update_metrics(self, model, sample_size_limit):
         for k in range(len(self.metrics)):
@@ -367,11 +325,6 @@ class DynamicMetrics(CustomMetrics):
             y = tf.constant(cors)
             y_pred = model(input_data)
             for j in range(4):
-                kmetrics[j].update_state(y, y_pred)
-
-            input_data = self.training_sampler.obtain_input_data_filter_lang(topics_id=topics, contents_id=contents)
-            y_pred = model(input_data)
-            for j in range(4,8):
                 kmetrics[j].update_state(y, y_pred)
     def obtain_metrics(self):
         metrics_list = [metr for met in self.metrics for metr in met["metrics"]]

@@ -6,8 +6,10 @@ You probably know how to use conda. First open anaconda prompt
 
 And then CD to your working directory
 
-    cd KaggleLearningEquality2023/jason
+    cd PycharmProjects/KaggleLearningEquality2023/jason
 
 Run the jupyter notebook now
 
     python -m notebook
+
+GGAPOLYU
