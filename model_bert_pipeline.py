@@ -81,7 +81,7 @@ def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func =
     model.compile(weight_decay = 0.001, learning_rate = tfm.optimization.lr_schedule.LinearWarmup(
         warmup_learning_rate = 0,
         after_warmup_lr_sched = 0.0005,
-        warmup_steps = 2000
+        warmup_steps = 40
     ))
     model.set_training_params(15000, training_sampler=training_sampler, training_max_size=75000,
                               custom_metrics=custom_metrics, custom_stopping_func=custom_stopping_func,

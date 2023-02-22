@@ -170,8 +170,8 @@ class Model(tf.keras.Model):
                 gradients = tape.gradient(loss, trainable_vars)
                 self.optimizer.apply_gradients(zip(gradients, trainable_vars))
             else:
-                topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample((2 * self.training_sample_size) // 3)
-                topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(self.training_sample_size // 3)
+                topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample((9 * self.training_sample_size) // 10)
+                topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(self.training_sample_size // 10)
 
                 y0_1 = self.tuple_choice_sampler.has_correlations(contents, topics, class_ids)
                 y1_1 = self.tuple_choice_sampler_overshoot.has_correlations(contents, topics, class_ids)
@@ -212,9 +212,9 @@ class Model(tf.keras.Model):
             self.entropy_large_set.update_state(y, y_pred)
         else:
             topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
-                (2 * self.training_sample_size) // 3)
+                (9 * self.training_sample_size) // 10)
             topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
-                self.training_sample_size // 3)
+                self.training_sample_size // 10)
 
             y0_1 = self.tuple_choice_sampler.has_correlations(contents, topics, class_ids)
             y1_1 = self.tuple_choice_sampler_overshoot.has_correlations(contents, topics, class_ids)
@@ -297,25 +297,25 @@ class DynamicMetrics(model_bert_fix.CustomMetrics):
 
             if sample_choice <= 4:
                 if sample_choice == DynamicMetrics.TRAIN:
-                    topics, contents, cors, class_id = sampler.obtain_test_sample(min(60000, sample_size_limit))
+                    topics, contents, cors, class_id = sampler.obtain_train_sample(min(60000, sample_size_limit))
                 elif sample_choice == DynamicMetrics.TRAIN_SQUARE:
-                    topics, contents, cors, class_id = sampler.obtain_train_sample(min(360000, sample_size_limit))
+                    topics, contents, cors, class_id = sampler.obtain_train_square_sample(min(360000, sample_size_limit))
                 elif sample_choice == DynamicMetrics.TEST:
                     topics, contents, cors, class_id = sampler.obtain_test_sample(min(60000, sample_size_limit))
                 elif sample_choice == DynamicMetrics.TEST_SQUARE:
-                    topics, contents, cors, class_id = sampler.obtain_train_sample(min(360000, sample_size_limit))
+                    topics, contents, cors, class_id = sampler.obtain_test_square_sample(min(360000, sample_size_limit))
                 input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
                 y = tf.constant(cors)
                 y_pred = model(input_data)[:, 0]
             else:
                 if sample_choice == DynamicMetrics.TRAIN_OVERSHOOT:
-                    topics, contents, cors, class_id = sampler_overshoot.obtain_test_sample(min(60000, sample_size_limit))
+                    topics, contents, cors, class_id = sampler_overshoot.obtain_train_sample(min(60000, sample_size_limit))
                 elif sample_choice == DynamicMetrics.TRAIN_SQUARE_OVERSHOOT:
-                    topics, contents, cors, class_id = sampler_overshoot.obtain_train_sample(min(360000, sample_size_limit))
+                    topics, contents, cors, class_id = sampler_overshoot.obtain_train_square_sample(min(360000, sample_size_limit))
                 elif sample_choice == DynamicMetrics.TEST_OVERSHOOT:
                     topics, contents, cors, class_id = sampler_overshoot.obtain_test_sample(min(60000, sample_size_limit))
                 elif sample_choice == DynamicMetrics.TEST_SQUARE_OVERSHOOT:
-                    topics, contents, cors, class_id = sampler_overshoot.obtain_train_sample(min(360000, sample_size_limit))
+                    topics, contents, cors, class_id = sampler_overshoot.obtain_test_square_sample(min(360000, sample_size_limit))
                 input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
                 y = tf.constant(cors)
                 y_pred = model(input_data)[:, 1]
