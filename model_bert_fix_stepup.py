@@ -26,8 +26,12 @@ class Model(tf.keras.Model):
         self.dropout1 = tf.keras.layers.Dropout(rate=0.1)
         self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense2")
         self.dropout2 = tf.keras.layers.Dropout(rate=0.1)
+        self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense3")
+        self.dropout3 = tf.keras.layers.Dropout(rate=0.1)
+        self.dense4 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense4")
+        self.dropout4 = tf.keras.layers.Dropout(rate=0.1)
         # the results of dense2 will be plugged into this.
-        self.denseOvershoot = tf.keras.layers.Dense(units=128, activation="relu", name = "denseOvershoot")
+        self.denseOvershoot = tf.keras.layers.Dense(units=units_size, activation="relu", name = "denseOvershoot")
         self.dropoutOvershoot = tf.keras.layers.Dropout(rate=0.1)
         self.finalOvershoot = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "finalOvershoot")
 
@@ -36,11 +40,11 @@ class Model(tf.keras.Model):
         self.dropout1_fp = tf.keras.layers.Dropout(rate=0.1)
         self.dense2_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense2_fp")
         self.dropout2_fp = tf.keras.layers.Dropout(rate=0.1)
-        self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense3_fp")
-        self.dropout3 = tf.keras.layers.Dropout(rate=0.1)
-        self.dense4 = tf.keras.layers.Dense(units=128, name = "dense4")
+        self.dense3_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense3_fp")
+        self.dropout3_fp = tf.keras.layers.Dropout(rate=0.1)
+        self.dense4_fp = tf.keras.layers.Dense(units=128, name = "dense4_fp")
         self.relu4 = tf.keras.layers.ReLU()
-        self.dropout4 = tf.keras.layers.Dropout(rate=0.1)
+        self.dropout4_fp = tf.keras.layers.Dropout(rate=0.1)
         self.dense5 = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "dense5")
 
         # loss functions and eval metrics
@@ -76,16 +80,18 @@ class Model(tf.keras.Model):
 
         first_layer = self.dropout0(embedding_result, training=training)
         t = self.dropout1(self.dense1(first_layer), training=training)
-        res_dropout2 = self.dropout2(self.dense2(t), training=training)
-
-        overshoot_128result = self.dropoutOvershoot(self.denseOvershoot(res_dropout2), training=training)
-        overshoot_result = self.finalOvershoot(overshoot_128result)
-
-
-        t = self.dropout1_fp(self.dense1_fp(tf.concat([first_layer, overshoot_128result], axis=-1)), training=training)
-        t = self.dropout2_fp(self.dense2_fp(t), training=training)
+        t = self.dropout2(self.dense2(t), training=training)
         t = self.dropout3(self.dense3(t), training=training)
-        t = self.dropout4(self.relu4(self.dense4(t)), training=training)
+        res_dropout4 = self.dropout4(self.dense4(t), training=training)
+
+        overshoot_fullresult = self.dropoutOvershoot(self.denseOvershoot(res_dropout4), training=training)
+        overshoot_result = self.finalOvershoot(overshoot_fullresult)
+
+
+        t = self.dropout1_fp(self.dense1_fp(tf.concat([first_layer, overshoot_fullresult], axis=-1)), training=training)
+        t = self.dropout2_fp(self.dense2_fp(t), training=training)
+        t = self.dropout3_fp(self.dense3_fp(t), training=training)
+        t = self.dropout4_fp(self.relu4(self.dense4_fp(t)), training=training)
         t = self.dense5(t)
         if training and actual_y is not None:  # here we use overestimation training method for the set
             p = 4.0
@@ -157,41 +163,58 @@ class Model(tf.keras.Model):
         for k in range(50):
             # two pass, we first compute on overshoot only, and then compute on the full thing
             if not self.state_is_final:
-                topics, contents, cors, class_ids = self.tuple_choice_sampler_overshoot.obtain_train_sample(
-                    self.training_sample_size)
-                input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
-                cors = np.tile(cors, 2)
-                y = tf.constant(cors)
+                ratio1 = 0.0 / 4
+                ratio2 = 4.0 / 4
 
-                with tf.GradientTape() as tape:
-                    y_pred = self(input_data, training=True)[:, 1]
-                    loss = self.loss(y, y_pred)
-                trainable_vars = self.trainable_weights
-                gradients = tape.gradient(loss, trainable_vars)
-                self.optimizer.apply_gradients(zip(gradients, trainable_vars))
-            else:
-                topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample((9 * self.training_sample_size) // 10)
-                topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(self.training_sample_size // 10)
+                topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(int(ratio1 * self.training_sample_size))
+                topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(int(ratio2 * self.training_sample_size))
 
                 y0_1 = self.tuple_choice_sampler.has_correlations(contents, topics, class_ids)
-                y1_1 = self.tuple_choice_sampler_overshoot.has_correlations(contents, topics, class_ids)
 
-                y0_2 = self.tuple_choice_sampler.has_correlations(contents2, topics2, class_ids2)
                 y1_2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, class_ids2)
 
-                y0 = np.tile(np.concatenate([y0_1, y0_2]), 2)
-                y1 = np.tile(np.concatenate([y1_1, y1_2]), 2)
+                y0 = np.tile(np.concatenate([y0_1, y1_2]), 2)
 
                 topics = np.concatenate([topics, topics2])
                 contents = np.concatenate([contents, contents2])
 
                 input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
 
-                y = tf.constant(np.concatenate([np.expand_dims(y0, 1), np.expand_dims(y1, 1)], axis = 1))
+                y = tf.constant(y0)
 
                 with tf.GradientTape() as tape:
                     y_pred = self(input_data, training=True)
-                    loss = self.loss(y, y_pred)
+                    loss = self.loss(y, tf.concat([y_pred[:len(y0_1), 0], y_pred[len(y0_1):len(y0), 1],
+                                y_pred[len(y0):(len(y0)+len(y0_1)), 0], y_pred[(len(y0)+len(y0_1)):(2*len(y0)), 1]], axis = 0))
+                trainable_vars = self.trainable_weights
+                gradients = tape.gradient(loss, trainable_vars)
+                self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+            else:
+                ratio1 = 7.0 / 8
+                ratio2 = 1.0 / 8
+
+                topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
+                    int(ratio1 * self.training_sample_size))
+                topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
+                    int(ratio2 * self.training_sample_size))
+
+                y0_1 = self.tuple_choice_sampler.has_correlations(contents, topics, class_ids)
+
+                y1_2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, class_ids2)
+
+                y0 = np.tile(np.concatenate([y0_1, y1_2]), 2)
+
+                topics = np.concatenate([topics, topics2])
+                contents = np.concatenate([contents, contents2])
+
+                input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
+
+                y = tf.constant(y0)
+
+                with tf.GradientTape() as tape:
+                    y_pred = self(input_data, training=True)
+                    loss = self.loss(y, tf.concat([y_pred[:len(y0_1), 0], y_pred[len(y0_1):len(y0), 1],
+                                y_pred[len(y0):(len(y0)+len(y0_1)), 0], y_pred[(len(y0)+len(y0_1)):(2*len(y0)), 1]], axis = 0))
                 trainable_vars = self.trainable_weights
                 gradients = tape.gradient(loss, trainable_vars)
                 self.optimizer.apply_gradients(zip(gradients, trainable_vars))
@@ -204,34 +227,56 @@ class Model(tf.keras.Model):
 
         # evaluation at larger subset
         if not self.state_is_final:
-            topics, contents, cors, class_ids = self.tuple_choice_sampler_overshoot.obtain_train_sample(min(len(data_bert.train_contents), limit))
-            input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
-            cors = np.tile(cors, 2)
-            y = tf.constant(cors)
-            y_pred = self(input_data, training=True)[:, 1]
-            self.entropy_large_set.update_state(y, y_pred)
-        else:
+            ratio1 = 0.0 / 4
+            ratio2 = 4.0 / 4
+
             topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
-                (9 * self.training_sample_size) // 10)
+                int(ratio1 * self.training_sample_size))
             topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
-                self.training_sample_size // 10)
+                int(ratio2 * self.training_sample_size))
 
             y0_1 = self.tuple_choice_sampler.has_correlations(contents, topics, class_ids)
-            y1_1 = self.tuple_choice_sampler_overshoot.has_correlations(contents, topics, class_ids)
 
-            y0_2 = self.tuple_choice_sampler.has_correlations(contents2, topics2, class_ids2)
             y1_2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, class_ids2)
 
-            y0 = np.tile(np.concatenate([y0_1, y0_2]), 2)
-            y1 = np.tile(np.concatenate([y1_1, y1_2]), 2)
+            y0 = np.tile(np.concatenate([y0_1, y1_2]), 2)
 
             topics = np.concatenate([topics, topics2])
             contents = np.concatenate([contents, contents2])
 
             input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
 
-            y = tf.constant(np.concatenate([np.expand_dims(y0, 1), np.expand_dims(y1, 1)], axis=1))
+            y = tf.constant(y0)
+
             y_pred = self(input_data, training=True)
+            y_pred = tf.concat([y_pred[:len(y0_1), 0], y_pred[len(y0_1):len(y0), 1],
+                                y_pred[len(y0):(len(y0)+len(y0_1)), 0], y_pred[(len(y0)+len(y0_1)):(2*len(y0)), 1]], axis = 0)
+            self.entropy_large_set.update_state(y, y_pred)
+        else:
+            ratio1 = 7.0 / 8
+            ratio2 = 1.0 / 8
+
+            topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
+                int(ratio1 * self.training_sample_size))
+            topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
+                int(ratio2 * self.training_sample_size))
+
+            y0_1 = self.tuple_choice_sampler.has_correlations(contents, topics, class_ids)
+
+            y1_2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, class_ids2)
+
+            y0 = np.tile(np.concatenate([y0_1, y1_2]), 2)
+
+            topics = np.concatenate([topics, topics2])
+            contents = np.concatenate([contents, contents2])
+
+            input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
+
+            y = tf.constant(y0)
+
+            y_pred = self(input_data, training=True)
+            y_pred = tf.concat([y_pred[:len(y0_1), 0], y_pred[len(y0_1):len(y0), 1],
+                                y_pred[len(y0):(len(y0)+len(y0_1)), 0], y_pred[(len(y0)+len(y0_1)):(2*len(y0)), 1]], axis = 0)
             self.entropy_large_set.update_state(y, y_pred)
 
         new_entropy = self.entropy_large_set.result()
