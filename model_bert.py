@@ -132,11 +132,11 @@ class Model(tf.keras.Model):
         self.custom_stopping_func = None
 
         self.tuple_choice_sampler = None
-    def compile(self, weight_decay = 0.01):
+    def compile(self, weight_decay = 0.01, learning_rate = 0.0005):
         super(Model, self).compile(run_eagerly=True)
         # loss and optimizer
         self.loss = tf.keras.losses.BinaryCrossentropy()
-        self.optimizer = tf.keras.optimizers.experimental.AdamW(learning_rate=0.0005, weight_decay = weight_decay)
+        self.optimizer = tf.keras.optimizers.experimental.AdamW(learning_rate=learning_rate, weight_decay = weight_decay)
         self.training_one_sample_size = 1000
         self.training_zero_sample_size = 1000
         self.prev_entropy = None
