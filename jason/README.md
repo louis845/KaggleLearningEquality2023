@@ -24,3 +24,4 @@ There are 3 models in the models folder. Help me find these few information:
     * For the above 3 epochs, create a table such that all other information (columns) in those epochs are included
     * Plot a graph with test_accuracy, test_recall, test_precision, test_entropy, test_square_precision, test_square_recall for all epochs
         * Include the previous 3 epoch you found as vertical lines in the graph.
+* After you are done, place it in a Word document **including the date of the models** so we can keep a record.
