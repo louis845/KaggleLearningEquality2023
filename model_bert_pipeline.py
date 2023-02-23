@@ -109,16 +109,19 @@ train_model("overshoot23", custom_metrics = metrics, custom_tuple_choice_sampler
 train_model_stepup("direct_model_stepup")
 
 tuple_choice_sampler = data_bert_sampler.default_sampler_instance
-tuple_choice_sampler_overshoot = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_overshoot2_instance, data_bert_sampler.default_sampler_overshoot3_instance])
+tuple_choice_sampler_overshoot = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance])
 metrics = model_bert_fix_stepup.obtain_overshoot_metric_instance(tuple_choice_sampler, tuple_choice_sampler_overshoot)
 train_model_stepup("overshoot2_stepup", custom_metrics = metrics, custom_tuple_choice_sampler = tuple_choice_sampler, custom_tuple_choice_sampler_overshoot = tuple_choice_sampler_overshoot)
 
-tuple_choice_sampler = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance])
-tuple_choice_sampler_overshoot = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_overshoot2_instance, data_bert_sampler.default_sampler_overshoot3_instance])
+tuple_choice_sampler = data_bert_sampler.default_sampler_instance
+tuple_choice_sampler_overshoot = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot3_instance])
+metrics = model_bert_fix_stepup.obtain_overshoot_metric_instance(tuple_choice_sampler, tuple_choice_sampler_overshoot)
+train_model_stepup("overshoot3_stepup", custom_metrics = metrics, custom_tuple_choice_sampler = tuple_choice_sampler, custom_tuple_choice_sampler_overshoot = tuple_choice_sampler_overshoot)
+
+tuple_choice_sampler = data_bert_sampler.default_sampler_instance
+tuple_choice_sampler_overshoot = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, data_bert_sampler.default_sampler_overshoot3_instance])
 metrics = model_bert_fix_stepup.obtain_overshoot_metric_instance(tuple_choice_sampler, tuple_choice_sampler_overshoot)
 train_model_stepup("overshoot23_stepup", custom_metrics = metrics, custom_tuple_choice_sampler = tuple_choice_sampler, custom_tuple_choice_sampler_overshoot = tuple_choice_sampler_overshoot)
-
-
 
 """del model
 del training_sampler

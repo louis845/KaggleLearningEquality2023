@@ -28,10 +28,8 @@ class Model(tf.keras.Model):
         self.dropout2 = tf.keras.layers.Dropout(rate=0.1)
         self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense3")
         self.dropout3 = tf.keras.layers.Dropout(rate=0.1)
-        self.dense4 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense4")
-        self.dropout4 = tf.keras.layers.Dropout(rate=0.1)
         # the results of dense2 will be plugged into this.
-        self.denseOvershoot = tf.keras.layers.Dense(units=units_size, activation="relu", name = "denseOvershoot")
+        self.denseOvershoot = tf.keras.layers.Dense(units=units_size // 4, activation="relu", name = "denseOvershoot")
         self.dropoutOvershoot = tf.keras.layers.Dropout(rate=0.1)
         self.finalOvershoot = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "finalOvershoot")
 
@@ -81,10 +79,9 @@ class Model(tf.keras.Model):
         first_layer = self.dropout0(embedding_result, training=training)
         t = self.dropout1(self.dense1(first_layer), training=training)
         t = self.dropout2(self.dense2(t), training=training)
-        t = self.dropout3(self.dense3(t), training=training)
-        res_dropout4 = self.dropout4(self.dense4(t), training=training)
+        res_dropout3 = self.dropout3(self.dense3(t), training=training)
 
-        overshoot_fullresult = self.dropoutOvershoot(self.denseOvershoot(res_dropout4), training=training)
+        overshoot_fullresult = self.dropoutOvershoot(self.denseOvershoot(res_dropout3), training=training)
         overshoot_result = self.finalOvershoot(overshoot_fullresult)
 
 
