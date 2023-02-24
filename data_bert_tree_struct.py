@@ -11,19 +11,31 @@ import time
 levels = 10
 
 topics_group = [] # topics_group[k] are the partition by kth level
-# each topics_group[k], is a dict {"groups":groups, "group_ids":group_ids}.
+# each topics_group[k], is a dict {"groups":groups, "group_ids":group_ids, "group_train_ids":group_train_ids,
+# "group_test_ids":group_test_ids, "group_filter_available":group_filter_available}.
 # groups and group_ids are np arrays with the same size.
 # each group_ids[j] correspond to the integer id for the topic at the kth level
 # each group[j] is another np array containing all the integer ids of subtopics (and itself)
+# group_filter_available is an np array with same size as group, such that group_filter_available[j] is another np
+# array containing all integer ids of subtopics in group[j], filtered by data_bert.topics_availability_num_id, meaning
+# that either the title or description is non-empty.
 
+topics_group_filtered = [] # same thing as above, except that we filter out the low tree size ones, and we add the following:
+# group_train_ids and group_test_ids are all the locations such that group_ids are in train, test respectively. this
+# means group_ids[group_train_ids] are in data_bert.train_topics_num_id, and data_bert.test_topics_num_id resp.
 
-topic_trees_contents = [] # topic_trees_contents is a list, where each topic[k] is list of tuples (represented by two
-# np arrays topic[k]["topic_id_klevel"], topic[k]["content_id"]), containing the correlations of topics and contents,
-# sorted first by topics and then by contents. In each tuple (topic, content) in topic[k], the topic corresponds to the
-# topicID in kth level (which means topics_group[k]["group_ids"][topic] would be the topic_num_id for the global topics),
+topic_trees_filtered_contents = [] # topic_trees_contents is a list, where each topic_trees_filtered_contents[k] is
+# list of tuples (represented by two np arrays topic[k]["topic_id_klevel"], topic[k]["content_id"]),
+# containing the correlations of topics and contents, sorted first by topics and then by contents.
+# In each tuple (topic, content) in topic[k], the topic corresponds to the topicID in kth level (which means
+# topics_group[k]["group_ids"][topic] would be the topic_num_id for the global topics),
 # and content would directly be the content_num_id for the global contents list.
-topic_trees_contents_train = [] # same thing, just restricted to train set.
-topic_trees_contents_test = [] # same thing, just restricted to test set.
+# A tuple (topic[k]["topic_id_klevel"][j], topic[k]["content_id"][j]) exists iff the topic subtree
+# represented by topic[k]["topic_id_klevel"][j] contains the content_id topic[k]["content_id"][j] in
+# one of the (non-strict) subnodes of the subtree.
+
+topic_trees_filtered_contents_train = [] # same thing, just restricted to train set.
+topic_trees_filtered_contents_test = [] # same thing, just restricted to test set.
 
 
 proximity_structure = [] # list of dicts to store the proximity structure.
@@ -71,26 +83,64 @@ def generate_topics_grouping_info():
                     topics_group[i]["groups"][pl] = np.concatenate([old_arr, np.array([group_ids[pl_i]], dtype = np.int32)])
 
                     del old_arr
-def generate_topics_contents_correlations():
-    for plevel in range(len(topics_group)):
+
+    for k in range(levels + 1):
+        topics_group[k]["group_filter_available"] = np.empty(shape=topics_group[k]["groups"].shape,
+                                                                      dtype="object")
+        for j in range(len(topics_group[k]["groups"])):
+            original_group = topics_group[k]["groups"][j]
+            topics_group[k]["group_filter_available"][j] = original_group[
+                data_bert.fast_contains_multi(data_bert.topics_availability_num_id, original_group)]
+
+    for k in range(levels + 1):
+        group_sizes = [len(topics_group[k]["group_filter_available"][j]) for j in
+                       range(len(topics_group[k]["group_filter_available"]))]
+        group_sizes = np.array(group_sizes)
+        good_groups = group_sizes > 4
+        topics_group_filtered.append({"groups":topics_group[k]["groups"][good_groups],
+                                      "group_ids":topics_group[k]["group_ids"][good_groups],
+                                      "group_filter_available":topics_group[k]["group_filter_available"][good_groups]})
+def generate_topics_contents_correlations(mfiltered_topics_group, mtopic_trees_filtered_contents, contents_filter = None):
+    for plevel in range(len(mfiltered_topics_group)):
         emptydict = {"topic_id_klevel": [], "content_id": []}
-        topic_trees_contents.append(emptydict)
+        for tree in range(len(mfiltered_topics_group[plevel]["group_ids"])):
+            emptydict["topic_id_klevel"].append([])
+
+        mtopic_trees_filtered_contents.append(emptydict)
     for k in range(len(data_bert.topics)):
         if data_bert.topics.loc[data_bert.topics.index[k], "has_content"]:
             content_ids = data_bert.correlations.loc[data_bert.topics.index[k], "content_ids"].split()
             content_num_ids = list(np.sort(data_bert.contents_inv_map[content_ids].to_numpy()))
 
             level = data_bert.topics.loc[data_bert.topics.index[k], "level"]
+            topic_str_id = data_bert.topics.index[k]
+            topic_num_id = k
             for plevel in range(level, -1, -1):
-                klevel_id = np.searchsorted(topics_group[plevel]["group_ids"], k) # find the location such that
-                # topics_group[plevel]["group_ids"][klevel_id] = k
-                topic_trees_contents[plevel]["topic_id_klevel"].extend([klevel_id] * len(content_ids))
-                topic_trees_contents[plevel]["content_id"].extend(content_num_ids)
-    for plevel in range(len(topics_group)):
-        topic_ids_kl = topic_trees_contents[plevel]["topic_id_klevel"]
-        gcontent_id = topic_trees_contents[plevel]["content_id"]
-        topic_trees_contents[plevel]["topic_id_klevel"] = np.array(topic_ids_kl, dtype = np.int32)
-        topic_trees_contents[plevel]["content_id"] = np.array(gcontent_id, dtype=np.int32)
+                klevel_id = np.searchsorted(mfiltered_topics_group[plevel]["group_ids"], topic_num_id) # find the location such that
+                # topics_group_filtered[plevel]["group_ids"][klevel_id] = topic_num_id
+                if not ((klevel_id == len(mfiltered_topics_group[plevel]["group_ids"])) or
+                    (mfiltered_topics_group[plevel]["group_ids"][klevel_id] != topic_num_id)):
+                    mtopic_trees_filtered_contents[plevel]["topic_id_klevel"][klevel_id].extend(content_num_ids)
+
+                if plevel > 0:
+                    topic_str_id = data_bert.topics.loc[topic_str_id, "parent"]
+                    topic_num_id = data_bert.topics_inv_map[topic_str_id]
+
+    for plevel in range(len(mfiltered_topics_group)):
+        topic_ids_kl = mtopic_trees_filtered_contents[plevel]["topic_id_klevel"]
+        if len(topic_ids_kl) == 0:
+            mtopic_trees_filtered_contents[plevel]["content_id"] = np.array([], dtype = np.int32)
+            mtopic_trees_filtered_contents[plevel]["topic_id_klevel"] = np.array([], dtype=np.int32)
+        else:
+            for tree in range(len(topic_ids_kl)):
+                topic_ids_kl[tree] = np.unique(np.array(topic_ids_kl[tree], dtype = np.int32))
+                if contents_filter is not None:
+                    topic_ids_kl[tree] = topic_ids_kl[tree][data_bert.fast_contains_multi(contents_filter, topic_ids_kl[tree])]
+
+            reps = np.array([len(topic_ids_kl[tree]) for tree in range(len(topic_ids_kl))])
+            mtopic_trees_filtered_contents[plevel]["content_id"] = np.concatenate(topic_ids_kl)
+            mtopic_trees_filtered_contents[plevel]["topic_id_klevel"] = np.repeat(np.arange(len(topic_ids_kl)), reps)
+
 
 def initialize_proximity_structure(prox_struct):
     for k in range(len(data_bert.topics)):
@@ -212,7 +262,13 @@ def generate_further_proximity_correlations():
     has_further_correlation_test_contents = np.array(has_further_correlation_test_contents, np.int32)
 
 generate_topics_grouping_info()
-generate_topics_contents_correlations()
+generate_topics_contents_correlations(topics_group_filtered, topic_trees_filtered_contents)
+generate_topics_contents_correlations(topics_group_filtered, topic_trees_filtered_contents_train, data_bert.train_contents_num_id)
+generate_topics_contents_correlations(topics_group_filtered, topic_trees_filtered_contents_test, data_bert.test_contents_num_id)
+for k in range(levels + 1):
+    topics_group_filtered[k]["group_train_ids"] = np.unique(topic_trees_filtered_contents_train[k]["topic_id_klevel"])
+    topics_group_filtered[k]["group_test_ids"] = np.unique(topic_trees_filtered_contents_test[k]["topic_id_klevel"])
+
 generate_proximity_structure(proximity_structure, distance = 2)
 generate_proximity_structure(further_proximity_structure, distance = 3)
 
@@ -269,6 +325,18 @@ def has_further_correlations_train(content_num_ids, topic_num_ids):
 def has_further_correlations_test(content_num_ids, topic_num_ids):
     return data_bert.has_correlations_general(content_num_ids, topic_num_ids, has_further_correlation_test_contents, has_further_correlation_test_topics)
 
+def has_tree_correlations(content_num_ids, topic_lvk_num_ids, k_level):
+    return data_bert.has_correlations_general(content_num_ids, topic_lvk_num_ids,
+                                              topic_trees_filtered_contents[k_level]["content_id"], topic_trees_filtered_contents[k_level]["topic_id_klevel"])
+
+def has_tree_correlations_train(content_num_ids, topic_lvk_num_ids, k_level):
+    return data_bert.has_correlations_general(content_num_ids, topic_lvk_num_ids,
+                                              topic_trees_filtered_contents_train[k_level]["content_id"], topic_trees_filtered_contents_train[k_level]["topic_id_klevel"])
+
+def has_tree_correlations_test(content_num_ids, topic_lvk_num_ids, k_level):
+    return data_bert.has_correlations_general(content_num_ids, topic_lvk_num_ids,
+                                              topic_trees_filtered_contents_test[k_level]["content_id"], topic_trees_filtered_contents_test[k_level]["topic_id_klevel"])
+
 def obtain_train_sample(one_sample_size, zero_sample_size):
     return data_bert.obtain_general_sample(one_sample_size, zero_sample_size, has_close_correlation_train_contents, has_close_correlation_train_topics, data_bert.train_contents_num_id, data_bert.train_topics_num_id)
 
@@ -289,3 +357,22 @@ def obtain_further_train_square_sample(sample_size):
     return data_bert.obtain_general_square_sample(sample_size, has_further_correlation_train_contents, has_further_correlation_train_topics, data_bert.train_contents_num_id, data_bert.train_topics_num_id)
 def obtain_further_test_square_sample(sample_size):
     return data_bert.obtain_general_square_sample(sample_size, has_further_correlation_test_contents, has_further_correlation_test_topics, data_bert.test_contents_num_id, data_bert.test_topics_num_id)
+
+
+def obtain_tree_train_sample(one_sample_size, zero_sample_size, k_level):
+    return data_bert.obtain_general_sample(one_sample_size, zero_sample_size,
+                    topic_trees_filtered_contents_train[k_level]["content_id"], topic_trees_filtered_contents_train[k_level]["topic_id_klevel"],
+                    data_bert.train_contents_num_id, topics_group_filtered[k_level]["group_train_ids"])
+
+def obtain_tree_test_sample(one_sample_size, zero_sample_size, k_level):
+    return data_bert.obtain_general_sample(one_sample_size, zero_sample_size,
+                    topic_trees_filtered_contents_test[k_level]["content_id"], topic_trees_filtered_contents_test[k_level]["topic_id_klevel"],
+                    data_bert.test_contents_num_id, topics_group_filtered[k_level]["group_test_ids"])
+def obtain_tree_train_square_sample(sample_size, k_level):
+    return data_bert.obtain_general_square_sample(sample_size,
+                    topic_trees_filtered_contents_train[k_level]["content_id"], topic_trees_filtered_contents_train[k_level]["topic_id_klevel"],
+                    data_bert.train_contents_num_id, topics_group_filtered[k_level]["group_train_ids"])
+def obtain_tree_test_square_sample(sample_size, k_level):
+    return data_bert.obtain_general_square_sample(sample_size,
+                    topic_trees_filtered_contents_test[k_level]["content_id"], topic_trees_filtered_contents_test[k_level]["topic_id_klevel"],
+                    data_bert.test_contents_num_id, topics_group_filtered[k_level]["group_test_ids"])

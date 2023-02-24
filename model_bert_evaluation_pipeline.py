@@ -7,6 +7,7 @@ import pandas as pd
 import time
 import data_bert
 import math
+import gc
 
 class ObtainProbabilitiesCallback:
     def __init__(self):
@@ -33,7 +34,6 @@ def predict_rows(proba_callback, topic_id_rows, contents_restrict, full_topics_d
     return probabilities
 
 default_topk_values = (np.arange(10) + 1) * 3  # TODO - find optimal topk
-default_topk_values = np.concatenate([default_topk_values, np.array([100, 200])])
 
 def get_topk(x, k):
     res = np.argpartition(x, kth = -k, axis = 1)[:, -k:]
@@ -44,7 +44,7 @@ def get_topk(x, k):
 # topics_restrict, contents_restrict are np arrays containing the restrictions to topics and contents respectively
 # usually this is used to restrict it to test set. topk_values are the topk probas for the model to choose from.
 # by default, it is
-def obtain_rowwise_topk_from_files(proba_callback, topics_restrict, contents_restrict, full_topics_data, full_contents_data, topk_values = None, greedy_multiple_rows = 40):
+def obtain_rowwise_topk(proba_callback, topics_restrict, contents_restrict, full_topics_data, full_contents_data, topk_values = None, greedy_multiple_rows = 40):
     if topk_values is None:
         topk_values = default_topk_values
 
@@ -58,35 +58,36 @@ def obtain_rowwise_topk_from_files(proba_callback, topics_restrict, contents_res
     length = len(topics_restrict)
     prevlnumber = 0
     max_topk = np.max(topk_values)
-    for batch in range(int(math.ceil((length + 0.0) / greedy_multiple_rows))):
-        low = batch * greedy_multiple_rows
-        high = min((batch + 1) * greedy_multiple_rows, length)
-        tlow = low
-        thigh = high
-        while tlow < high:
-            # range is inside [tlow, thigh)
-            topic_id_rows = topics_restrict[np.arange(tlow, thigh)]
-            probabilities = predict_rows(proba_callback, topic_id_rows, contents_restrict, full_topics_data,
-                                               full_contents_data)
-            if probabilities is not None:
-                probabilities = probabilities.reshape((thigh - tlow), len(contents_restrict))
-                sorted_locs = get_topk(probabilities, max_topk)
-                for i in range(len(topk_values)):
-                    topk_preds[topk_values[i]][np.arange(tlow, thigh), :] = contents_restrict[sorted_locs[:,-topk_values[i]:]]
-                # if success we update
-                tlow = thigh
-                thigh = high
-            else:
-                thigh = max((thigh + tlow) // 2, tlow + 1)
-                # if fail we decrease the high
 
-        lnumber = batch * greedy_multiple_rows
-        if lnumber - prevlnumber >= 200:
-            print("Computed topk of " + str(lnumber) + " out of " + str(len(topics_restrict)))
-            ctime = time.time() - ctime
-            print(ctime)
-            ctime = time.time()
-            prevlnumber = lnumber
+    batch_size = greedy_multiple_rows
+    tlow = 0
+    continuous_success = 0
+    prev_tlow = 0
+    while tlow < length:
+        thigh = min(tlow + batch_size, length)
+        topic_id_rows = topics_restrict[np.arange(tlow, thigh)]
+        probabilities = predict_rows(proba_callback, topic_id_rows, contents_restrict, full_topics_data,
+                                     full_contents_data)
+        if probabilities is not None:
+            probabilities = probabilities.reshape((thigh - tlow), len(contents_restrict))
+            sorted_locs = get_topk(probabilities, max_topk)
+            for i in range(len(topk_values)):
+                topk_preds[topk_values[i]][np.arange(tlow, thigh), :] = contents_restrict[
+                    sorted_locs[:, -topk_values[i]:]]
+            # if success we update
+            tlow = thigh
+            continuous_success += 1
+            if continuous_success == 10:
+                continuous_success = 0
+                batch_size = max(int(batch_size * 1.7), batch_size + 1)
+
+            if tlow - prev_tlow > 1000:
+                print(tlow, "completed.")
+                prev_tlow = tlow
+        else:
+            batch_size = max(int(batch_size / 1.3), 1)
+            continuous_success = 0
+            gc.collect()
 
     return topk_preds
 

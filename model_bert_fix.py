@@ -23,6 +23,7 @@ import tensorflow
 import tensorflow as tf
 import numpy as np
 import data_bert
+import data_bert_tree_struct
 import config
 import gc
 
@@ -140,6 +141,94 @@ class TrainingSampler:
         del with_lang, no_lang
         return input_data
 
+    # expected: 3 1D arrays of the same length. each tuple (topics_id_klevel[j], contents_id[j], tree_levels[j])
+    # represents a topic subtree, and the content id. the content id is obviously contents_id[j]. The topic subtree
+    # is given by data_bert_tree_struct.topics_group_filtered[tree_levels[j]]["group_filter_available"][topics_id_klevel[j]].
+    # The topic_num_id of the root node of the subtree is
+    # data_bert_tree_struct.topics_group_filtered[tree_levels[j]]["group_ids"][topics_id_klevel[j]]
+    def obtain_input_data_tree(self, topics_id_klevel, contents_id, tree_levels):
+        if self.device != "gpu":
+            raise Exception("Must use GPU for tree learning!")
+        assert len(topics_id_klevel) == len(contents_id) and len(contents_id) == len(tree_levels)
+
+        topics_ragged_list = np.empty(shape=(len(topics_id_klevel)), dtype="object")
+        for level in range(np.min(tree_levels), np.max(tree_levels) + 1):
+            llocs = tree_levels == level
+            topics_ragged_list[llocs] = data_bert_tree_struct.topics_group_filtered[level]["group_filter_available"][topics_id_klevel[llocs]]
+        topics_ragged_list = list(topics_ragged_list)
+        contents_ragged_list = [np.repeat(contents_id[k], len(topics_ragged_list[k])) for k in range(len(topics_ragged_list))]
+
+        topics_ragged_list = tf.ragged.constant(topics_ragged_list)
+        contents_ragged_list = tf.ragged.constant(contents_ragged_list)
+        input_data = {
+            "contents": {
+                "description": tf.gather(self.contents_description, contents_ragged_list, axis=0),
+                "title": tf.gather(self.contents_title, contents_ragged_list, axis=0),
+                "lang": tf.gather(self.contents_one_hot, contents_ragged_list, axis=0)
+            },
+            "topics": {
+                "description": tf.gather(self.topics_description, topics_ragged_list, axis=0),
+                "title": tf.gather(self.topics_title, topics_ragged_list, axis=0),
+                "lang": tf.gather(self.topics_one_hot, topics_ragged_list, axis=0)
+            }
+        }
+        return input_data
+
+    # same thing, except that the lang one-hot columns are all zeros.
+    def obtain_input_data_tree_filter_lang(self, topics_id_klevel, contents_id, tree_levels):
+        if self.device != "gpu":
+            raise Exception("Must use GPU for tree learning!")
+        assert len(topics_id_klevel) == len(contents_id) and len(contents_id) == len(tree_levels)
+
+        topics_ragged_list = np.empty(shape=(len(topics_id_klevel)), dtype="object")
+        for level in range(np.min(tree_levels), np.max(tree_levels) + 1):
+            llocs = tree_levels == level
+            topics_ragged_list[llocs] = data_bert_tree_struct.topics_group_filtered[level]["group_filter_available"][
+                topics_id_klevel[llocs]]
+        topics_ragged_list = list(topics_ragged_list)
+        contents_ragged_list = [np.repeat(contents_id[k], len(topics_ragged_list[k])) for k in
+                                range(len(topics_ragged_list))]
+        dummy_ragged_list = [np.repeat(0, len(topics_ragged_list[k])) for k in
+                                range(len(topics_ragged_list))]
+
+        topics_ragged_list = tf.ragged.constant(topics_ragged_list)
+        contents_ragged_list = tf.ragged.constant(contents_ragged_list)
+        dummy_ragged_list = tf.ragged.constant(dummy_ragged_list)
+
+        dummy_zeros = tf.zeros(shape = (1, self.contents_title.shape[1]))
+        input_data = {
+            "contents": {
+                "description": tf.gather(self.contents_description, contents_ragged_list, axis=0),
+                "title": tf.gather(self.contents_title, contents_ragged_list, axis=0),
+                "lang": tf.gather(dummy_zeros, dummy_ragged_list, axis=0)
+            },
+            "topics": {
+                "description": tf.gather(self.topics_description, topics_ragged_list, axis=0),
+                "title": tf.gather(self.topics_title, topics_ragged_list, axis=0),
+                "lang": tf.gather(dummy_zeros, dummy_ragged_list, axis=0)
+            }
+        }
+        return input_data
+
+    def obtain_input_data_tree_both(self, topics_id_klevel, contents_id, tree_levels):
+        with_lang = self.obtain_input_data_tree(topics_id_klevel, contents_id, tree_levels)
+        no_lang = self.obtain_input_data_tree_filter_lang(topics_id_klevel, contents_id, tree_levels)
+
+        input_data = {
+            "contents": {
+                "description": tf.concat([with_lang["contents"]["description"], no_lang["contents"]["description"]], axis = 0),
+                "title": tf.concat([with_lang["contents"]["title"], no_lang["contents"]["title"]], axis = 0),
+                "lang": tf.concat([with_lang["contents"]["lang"], no_lang["contents"]["lang"]], axis = 0)
+            },
+            "topics": {
+                "description": tf.concat([with_lang["topics"]["description"], no_lang["topics"]["description"]], axis = 0),
+                "title": tf.concat([with_lang["topics"]["title"], no_lang["topics"]["title"]], axis = 0),
+                "lang": tf.concat([with_lang["topics"]["lang"], no_lang["topics"]["lang"]], axis = 0)
+            }
+        }
+
+        del with_lang, no_lang
+        return input_data
 class Model(tf.keras.Model):
     # only the argument units_size define the shape of the model. the argument training_sampler is used for training only.
     def __init__(self, units_size = 512):
@@ -253,6 +342,8 @@ class Model(tf.keras.Model):
         t = self.dropout3(self.dense3(t), training=training)
         return self.dense4(t) # now we have a batch_size x set_size x 128 tensor, the last axis is reduced to 128 by linear transforms.
     def train_step(self, data):
+        if self.tuple_choice_sampler.is_tree_sampler():
+            return self.train_step_tree()
         for k in range(50):
             topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(self.training_sample_size)
             input_data = self.training_sampler.obtain_input_data_both(topics_id = topics, contents_id = contents)
