@@ -25,3 +25,11 @@ There are 3 models in the models folder. Help me find these few information:
     * Plot a graph with test_accuracy, test_recall, test_precision, test_entropy, test_square_precision, test_square_recall for all epochs
         * Include the previous 3 epoch you found as vertical lines in the graph.
 * After you are done, place it in a Word document **including the date of the models** so we can keep a record.
+
+# 2023-02-24 TODO:
+
+There are 7 more models in the models folder. Git fetch -> git pull to download them.
+* Apply the *previous* tasks as for the *previous* 3 models to each of the new 7 models.
+* For each 7 new models, include a plot of test_accuracy, test_recall, test_precision, test_entropy, test_overshoot_recall, test_overshoot_precision
+* Among all 10 models, find the one which has the "best" balanced test_precision vs test_recall ratio
+    * (which means the epoch where $\text{test_precision} \approx \text{test_recall}$, and we find the model which has the highest)
