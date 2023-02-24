@@ -163,8 +163,8 @@ class Model(tf.keras.Model):
         for k in range(50):
             # two pass, we first compute on overshoot only, and then compute on the full thing
             if not self.state_is_final:
-                ratio1 = 2.0 / 4000
-                ratio2 = 3998.0 / 4000
+                ratio1 = 500.0 / 4000
+                ratio2 = 3500.0 / 4000
 
                 topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(int(ratio1 * self.training_sample_size))
                 topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(int(ratio2 * self.training_sample_size))
@@ -227,8 +227,8 @@ class Model(tf.keras.Model):
 
         # evaluation at larger subset
         if not self.state_is_final:
-            ratio1 = 2.0 / 4000
-            ratio2 = 3998.0 / 4000
+            ratio1 = 500.0 / 4000
+            ratio2 = 3500.0 / 4000
 
             topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
                 int(ratio1 * self.training_sample_size))
