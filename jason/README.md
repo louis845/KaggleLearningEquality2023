@@ -32,4 +32,4 @@ There are 7 more models in the models folder. Git fetch -> git pull to download 
 * Apply the *previous* tasks as for the *previous* 3 models to each of the new 7 models.
 * For each 7 new models, include a plot of test_accuracy, test_recall, test_precision, test_entropy, test_overshoot_recall, test_overshoot_precision
 * Among all 10 models, find the one which has the "best" balanced test_precision vs test_recall ratio
-    * (which means the epoch where $\text{test_precision} \approx \text{test_recall}$, and we find the model which has the highest)
+    * (which means the epoch where $\text{test\_precision} \approx \text{test\_recall}$, and we find the model which has the highest)
