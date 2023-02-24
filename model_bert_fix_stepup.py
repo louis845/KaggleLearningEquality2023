@@ -22,12 +22,14 @@ class Model(tf.keras.Model):
         # standard stuff
         self.dropout0 = tf.keras.layers.GaussianDropout(rate=0.2)
 
-        self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense1")
+        self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense1")
         self.dropout1 = tf.keras.layers.Dropout(rate=0.1)
-        self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense2")
+        self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense2")
         self.dropout2 = tf.keras.layers.Dropout(rate=0.1)
         self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense3")
         self.dropout3 = tf.keras.layers.Dropout(rate=0.1)
+        self.dense4 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense4")
+        self.dropout4 = tf.keras.layers.Dropout(rate=0.1)
         # the results of dense2 will be plugged into this.
         self.denseOvershoot = tf.keras.layers.Dense(units=units_size // 4, activation="relu", name = "denseOvershoot")
         self.dropoutOvershoot = tf.keras.layers.Dropout(rate=0.1)
@@ -79,9 +81,10 @@ class Model(tf.keras.Model):
         first_layer = self.dropout0(embedding_result, training=training)
         t = self.dropout1(self.dense1(first_layer), training=training)
         t = self.dropout2(self.dense2(t), training=training)
-        res_dropout3 = self.dropout3(self.dense3(t), training=training)
+        t = self.dropout3(self.dense3(t), training=training)
+        res_dropout4 = self.dropout4(self.dense4(t), training=training)
 
-        overshoot_fullresult = self.dropoutOvershoot(self.denseOvershoot(res_dropout3), training=training)
+        overshoot_fullresult = self.dropoutOvershoot(self.denseOvershoot(res_dropout4), training=training)
         overshoot_result = self.finalOvershoot(overshoot_fullresult)
 
 
@@ -160,8 +163,8 @@ class Model(tf.keras.Model):
         for k in range(50):
             # two pass, we first compute on overshoot only, and then compute on the full thing
             if not self.state_is_final:
-                ratio1 = 0.0 / 4
-                ratio2 = 4.0 / 4
+                ratio1 = 2.0 / 4000
+                ratio2 = 3998.0 / 4000
 
                 topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(int(ratio1 * self.training_sample_size))
                 topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(int(ratio2 * self.training_sample_size))
@@ -187,8 +190,8 @@ class Model(tf.keras.Model):
                 gradients = tape.gradient(loss, trainable_vars)
                 self.optimizer.apply_gradients(zip(gradients, trainable_vars))
             else:
-                ratio1 = 7.0 / 8
-                ratio2 = 1.0 / 8
+                ratio1 = 1.0 / 4000
+                ratio2 = 3999.0 / 4000
 
                 topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
                     int(ratio1 * self.training_sample_size))
@@ -224,8 +227,8 @@ class Model(tf.keras.Model):
 
         # evaluation at larger subset
         if not self.state_is_final:
-            ratio1 = 0.0 / 4
-            ratio2 = 4.0 / 4
+            ratio1 = 2.0 / 4000
+            ratio2 = 3998.0 / 4000
 
             topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
                 int(ratio1 * self.training_sample_size))
@@ -250,8 +253,8 @@ class Model(tf.keras.Model):
                                 y_pred[len(y0):(len(y0)+len(y0_1)), 0], y_pred[(len(y0)+len(y0_1)):(2*len(y0)), 1]], axis = 0)
             self.entropy_large_set.update_state(y, y_pred)
         else:
-            ratio1 = 7.0 / 8
-            ratio2 = 1.0 / 8
+            ratio1 = 1.0 / 4000
+            ratio2 = 3999.0 / 4000
 
             topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
                 int(ratio1 * self.training_sample_size))
@@ -419,7 +422,7 @@ class DefaultStoppingFunc(model_bert_fix.CustomStoppingFunc):
         self.equal_thresh = 0
 
     def evaluate(self, custom_metrics, model):
-        if self.lowest_test_small_entropy is not None:
+        """if self.lowest_test_small_entropy is not None:
             if not model.state_is_final:
                 current_test_small_entropy = custom_metrics.get_test_overshoot_entropy_metric()
             else:
@@ -429,7 +432,7 @@ class DefaultStoppingFunc(model_bert_fix.CustomStoppingFunc):
                 model.save_weights(self.model_dir + "/best_test_small_entropy.ckpt")
                 self.countdown = 0
                 self.equal_thresh = 0
-            elif current_test_small_entropy > self.lowest_test_small_entropy * 1.005:
+            elif (current_test_small_entropy > self.lowest_test_small_entropy * 1.005 and not model.state_is_final) or (current_test_small_entropy > self.lowest_test_small_entropy * 1.02 and model.state_is_final):
                 self.countdown += 1
                 if self.countdown > 10:
                     if not model.state_is_final:
@@ -440,14 +443,11 @@ class DefaultStoppingFunc(model_bert_fix.CustomStoppingFunc):
                         return True
                     else:
                         return True
-            elif self.lowest_test_small_entropy * 0.9985 < current_test_small_entropy and current_test_small_entropy < self.lowest_test_small_entropy * 1.005:
+            elif self.lowest_test_small_entropy * 0.9995 < current_test_small_entropy and current_test_small_entropy < self.lowest_test_small_entropy * 1.005:
                 self.equal_thresh += 1
-                if self.equal_thresh > 5 and not model.state_is_final:
+                if self.equal_thresh > 20 and not model.state_is_final:
                     self.equal_thresh = 0
-                    self.lowest_test_small_entropy = self.lowest_test_small_entropy * 0.9985
-                elif self.equal_thresh > 60 and model.state_is_final:
-                    self.equal_thresh = 45
-                    self.lowest_test_small_entropy = self.lowest_test_small_entropy * 0.9985
+                    self.lowest_test_small_entropy = self.lowest_test_small_entropy * 0.9997
 
         else:
             if not model.state_is_final:
@@ -455,4 +455,24 @@ class DefaultStoppingFunc(model_bert_fix.CustomStoppingFunc):
             else:
                 current_test_small_entropy = custom_metrics.get_test_entropy_metric()
             self.lowest_test_small_entropy = current_test_small_entropy
-        return False
+        return False"""
+        if self.lowest_test_small_entropy is not None:
+            current_test_small_entropy = custom_metrics.get_test_entropy_metric()
+            if current_test_small_entropy < self.lowest_test_small_entropy:
+                self.lowest_test_small_entropy = current_test_small_entropy
+                model.save_weights(self.model_dir + "/best_test_small_entropy.ckpt")
+                self.countdown = 0
+                self.equal_thresh = 0
+            elif current_test_small_entropy > self.lowest_test_small_entropy * 1.02:
+                self.countdown += 1
+                if self.countdown > 10:
+                    return True
+
+        else:
+            current_test_small_entropy = custom_metrics.get_test_entropy_metric()
+            self.lowest_test_small_entropy = current_test_small_entropy
+
+    def force_final_state(self):
+        self.lowest_test_small_entropy = None
+        self.countdown = 0
+        self.equal_thresh = 0
