@@ -341,6 +341,65 @@ class Model(tf.keras.Model):
         t = self.dropout2(self.dense2(t), training=training)
         t = self.dropout3(self.dense3(t), training=training)
         return self.dense4(t) # now we have a batch_size x set_size x 128 tensor, the last axis is reduced to 128 by linear transforms.
+
+    def train_step_tree(self):
+        for k in range(50):
+            topics, contents, cors, class_ids, tree_levels, multipliers = self.tuple_choice_sampler.obtain_train_sample(self.training_sample_size)
+            input_data = self.training_sampler.obtain_input_data_tree_both(topics, contents, tree_levels)
+            cors = np.tile(cors, 2)
+            y = tf.expand_dims(tf.constant(cors), axis = 1)
+            multipliers_tf = tf.constant(np.tile(multipliers, 2))
+
+            with tf.GradientTape() as tape:
+                y_pred = tf.expand_dims(self(input_data, actual_y = cors, training=True), axis = 1)
+                loss = self.loss(y, y_pred, sample_weight=multipliers_tf)
+
+            trainable_vars = self.trainable_weights
+            gradients = tape.gradient(loss, trainable_vars)
+
+            self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+
+        if self.training_max_size is None:
+            limit = 9223372036854775807
+            limit_sq = 9223372036854775807
+        else:
+            limit = self.training_max_size
+
+        # evaluation at larger subset
+        topics, contents, cors, class_ids, tree_levels, multipliers = self.tuple_choice_sampler.obtain_train_sample(
+            self.training_sample_size)
+        input_data = self.training_sampler.obtain_input_data_tree_both(topics, contents, tree_levels)
+        cors = np.tile(cors, 2)
+        y = tf.expand_dims(tf.constant(cors), axis=1)
+        multipliers_tf = tf.constant(np.tile(multipliers, 2))
+        y_pred = tf.expand_dims(self(input_data, actual_y = cors, training=True), axis = 1)
+        self.entropy_large_set.update_state(y, y_pred, sample_weight=multipliers_tf)
+
+        new_entropy = self.entropy_large_set.result()
+        if (self.prev_entropy is not None) and new_entropy > self.prev_entropy * 1.05:
+            print(
+                "---------------------------------WARNING: Training problem: entropy has increased! Reverting training....---------------------------------")
+            # self.load_weights(config.training_models_path + "temp_ckpt/prev_ckpt")
+        else:
+            pass
+            # self.save_weights(config.training_models_path + "temp_ckpt/prev_ckpt")
+            # self.prev_entropy = new_entropy
+
+        for m in self.metrics:
+            m.update_state(y, y_pred)
+
+        # eval other test metrics
+        if self.custom_metrics is not None:
+            self.custom_metrics.update_metrics(self, limit)
+
+        # early stopping
+        if (self.custom_stopping_func is not None) and self.custom_stopping_func.evaluate(self.custom_metrics, self):
+            self.stop_training = True
+
+        # Return a dict mapping metric names to current value
+        return {**{m.name: m.result() for m in self.metrics},
+                "entropy_large_set": self.entropy_large_set.result(), **self.custom_metrics.obtain_metrics()}
+
     def train_step(self, data):
         if self.tuple_choice_sampler.is_tree_sampler():
             return self.train_step_tree()
@@ -426,6 +485,7 @@ class DynamicMetrics(CustomMetrics):
     def __init__(self):
         CustomMetrics.__init__(self)
         self.metrics = [] # a lists of dicts, containing the metrics, and the data_bert_sampler.SamplerBase which contains the metric
+        self.tree_metrics = [] # similar.
 
     def add_metric(self, name, tuple_choice_sampler, sample_choice = TEST, threshold = 0.5):
         accuracy = tf.keras.metrics.BinaryAccuracy(name = name + "_accuracy", threshold=threshold)
@@ -438,6 +498,18 @@ class DynamicMetrics(CustomMetrics):
         recall_nolang = tf.keras.metrics.Recall(name=name + "_recall_nolang", thresholds=threshold)
         entropy_nolang = tf.keras.metrics.BinaryCrossentropy(name=name + "_entropy_nolang")
         self.metrics.append({"metrics": [accuracy, precision, recall, entropy, accuracy_nolang, precision_nolang, recall_nolang, entropy_nolang], "sampler": tuple_choice_sampler, "sample_choice": sample_choice})
+
+    def add_tree_metric(self, name, tuple_choice_sampler_tree, level, sample_choice = TEST, threshold = 0.6):
+        accuracy = tf.keras.metrics.BinaryAccuracy(name = name + "_accuracy", threshold=threshold)
+        precision = tf.keras.metrics.Precision(name = name + "_precision", thresholds=threshold)
+        recall = tf.keras.metrics.Recall(name = name + "_recall", thresholds=threshold)
+        entropy = tf.keras.metrics.BinaryCrossentropy(name = name + "_entropy")
+
+        accuracy_nolang = tf.keras.metrics.BinaryAccuracy(name=name + "_accuracy_nolang", threshold=threshold)
+        precision_nolang = tf.keras.metrics.Precision(name=name + "_precision_nolang", thresholds=threshold)
+        recall_nolang = tf.keras.metrics.Recall(name=name + "_recall_nolang", thresholds=threshold)
+        entropy_nolang = tf.keras.metrics.BinaryCrossentropy(name=name + "_entropy_nolang")
+        self.metrics.append({"metrics": [accuracy, precision, recall, entropy, accuracy_nolang, precision_nolang, recall_nolang, entropy_nolang], "sampler": tuple_choice_sampler_tree, "sample_choice": sample_choice, "level": level})
 
     def update_metrics(self, model, sample_size_limit):
         for k in range(len(self.metrics)):
@@ -463,6 +535,31 @@ class DynamicMetrics(CustomMetrics):
             y_pred = model(input_data)
             for j in range(4,8):
                 kmetrics[j].update_state(y, y_pred)
+
+        for k in range(len(self.tree_metrics)):
+            kmetrics = self.metrics[k]["metrics"]
+            sampler = self.metrics[k]["sampler"]
+            sample_choice = self.metrics[k]["sample_choice"]
+            level = self.metrics[k]["level"]
+
+            if sample_choice == DynamicMetrics.TRAIN:
+                topics, contents, cors = sampler.obtain_tree_train_sample(min(50, sample_size_limit), level)
+            elif sample_choice == DynamicMetrics.TRAIN_SQUARE:
+                topics, contents, cors = sampler.obtain_tree_train_square_sample(min(7, sample_size_limit), level)
+            elif sample_choice == DynamicMetrics.TEST:
+                topics, contents, cors = sampler.obtain_tree_test_sample(min(50, sample_size_limit), level)
+            elif sample_choice == DynamicMetrics.TEST_SQUARE:
+                topics, contents, cors = sampler.obtain_tree_test_square_sample(min(7, sample_size_limit), level)
+            input_data = self.training_sampler.obtain_input_data_tree(topics_id=topics, contents_id=contents)
+            y = tf.constant(cors)
+            y_pred = model(input_data)
+            for j in range(4):
+                kmetrics[j].update_state(y, y_pred)
+
+            input_data = self.training_sampler.obtain_input_data_tree_filter_lang(topics_id=topics, contents_id=contents)
+            y_pred = model(input_data)
+            for j in range(4,8):
+                kmetrics[j].update_state(y, y_pred)
     def obtain_metrics(self):
         metrics_list = [metr for met in self.metrics for metr in met["metrics"]]
         return {m.name: m.result() for m in metrics_list}
@@ -477,6 +574,15 @@ class DynamicMetrics(CustomMetrics):
 default_metrics = DynamicMetrics()
 default_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST)
 default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
+
+default_tree_metrics = DynamicMetrics()
+default_tree_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST)
+default_tree_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
+default_tree_metrics.add_tree_metric("treelv0", data_bert_sampler.default_tree_sampler_instance, level = 0, sample_choice = DynamicMetrics.TEST)
+default_tree_metrics.add_tree_metric("treelv1", data_bert_sampler.default_tree_sampler_instance, level = 1, sample_choice = DynamicMetrics.TEST)
+default_tree_metrics.add_tree_metric("treelv2", data_bert_sampler.default_tree_sampler_instance, level = 2, sample_choice = DynamicMetrics.TEST)
+default_tree_metrics.add_tree_metric("treelv3", data_bert_sampler.default_tree_sampler_instance, level = 3, sample_choice = DynamicMetrics.TEST)
+default_tree_metrics.add_tree_metric("treelv4", data_bert_sampler.default_tree_sampler_instance, level = 4, sample_choice = DynamicMetrics.TEST)
 
 # create overshoot metrics, given the sampler used for selecting the tuples
 def obtain_overshoot_metric_instance(training_tuple_sampler):

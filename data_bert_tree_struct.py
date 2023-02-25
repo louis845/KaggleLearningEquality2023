@@ -38,6 +38,16 @@ topic_trees_filtered_contents_train = [] # same thing, just restricted to train 
 topic_trees_filtered_contents_test = [] # same thing, just restricted to test set.
 
 
+topic_trees_filtered_abundances_train = [] # topic_trees_filtered_abundances_train
+# is a list of integers of length 5, containing the abundance values on average for topics,
+# when the topics are drawn randomly and uniformly in the cartesian product (total_train_topics
+# x total_train_contents) sense. This list is used for computing the factor of multiplication
+# for the binary entropy loss, we want to "normalize" each layer so that the "relative chances"
+# of topics drawn in each layer are controlled.
+
+topic_trees_filtered_abundances_test = []
+
+
 proximity_structure = [] # list of dicts to store the proximity structure.
 further_proximity_structure = [] # list of dicts to store the further proximity structure.
 
@@ -96,7 +106,7 @@ def generate_topics_grouping_info():
         group_sizes = [len(topics_group[k]["group_filter_available"][j]) for j in
                        range(len(topics_group[k]["group_filter_available"]))]
         group_sizes = np.array(group_sizes)
-        good_groups = group_sizes > 4
+        good_groups = (group_sizes > 4) & (group_sizes <= 200)
         topics_group_filtered.append({"groups":topics_group[k]["groups"][good_groups],
                                       "group_ids":topics_group[k]["group_ids"][good_groups],
                                       "group_filter_available":topics_group[k]["group_filter_available"][good_groups]})
@@ -141,7 +151,11 @@ def generate_topics_contents_correlations(mfiltered_topics_group, mtopic_trees_f
             mtopic_trees_filtered_contents[plevel]["content_id"] = np.concatenate(topic_ids_kl)
             mtopic_trees_filtered_contents[plevel]["topic_id_klevel"] = np.repeat(np.arange(len(topic_ids_kl)), reps)
 
-
+def generate_abundances():
+    topic_trees_filtered_abundances_train = np.array([len(
+        topics_group_filtered[k]["group_train_ids"]) for k in range(5)])
+    topic_trees_filtered_abundances_test = np.array([len(
+        topics_group_filtered[k]["group_test_ids"]) for k in range(5)])
 def initialize_proximity_structure(prox_struct):
     for k in range(len(data_bert.topics)):
         prox_struct.append({"parent":None, "children":[], "close_prox":[]})
@@ -268,6 +282,7 @@ generate_topics_contents_correlations(topics_group_filtered, topic_trees_filtere
 for k in range(levels + 1):
     topics_group_filtered[k]["group_train_ids"] = np.unique(topic_trees_filtered_contents_train[k]["topic_id_klevel"])
     topics_group_filtered[k]["group_test_ids"] = np.unique(topic_trees_filtered_contents_test[k]["topic_id_klevel"])
+generate_abundances()
 
 generate_proximity_structure(proximity_structure, distance = 2)
 generate_proximity_structure(further_proximity_structure, distance = 3)
