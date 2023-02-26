@@ -38,14 +38,14 @@ topic_trees_filtered_contents_train = [] # same thing, just restricted to train 
 topic_trees_filtered_contents_test = [] # same thing, just restricted to test set.
 
 
-topic_trees_filtered_abundances_train = [] # topic_trees_filtered_abundances_train
+topic_trees_filtered_abundances_train = None # topic_trees_filtered_abundances_train
 # is a list of integers of length 5, containing the abundance values on average for topics,
 # when the topics are drawn randomly and uniformly in the cartesian product (total_train_topics
 # x total_train_contents) sense. This list is used for computing the factor of multiplication
 # for the binary entropy loss, we want to "normalize" each layer so that the "relative chances"
 # of topics drawn in each layer are controlled.
 
-topic_trees_filtered_abundances_test = []
+topic_trees_filtered_abundances_test = None
 
 
 proximity_structure = [] # list of dicts to store the proximity structure.
@@ -152,6 +152,7 @@ def generate_topics_contents_correlations(mfiltered_topics_group, mtopic_trees_f
             mtopic_trees_filtered_contents[plevel]["topic_id_klevel"] = np.repeat(np.arange(len(topic_ids_kl)), reps)
 
 def generate_abundances():
+    global topic_trees_filtered_abundances_train, topic_trees_filtered_abundances_test
     topic_trees_filtered_abundances_train = np.array([len(
         topics_group_filtered[k]["group_train_ids"]) for k in range(5)])
     topic_trees_filtered_abundances_test = np.array([len(
@@ -391,3 +392,8 @@ def obtain_tree_test_square_sample(sample_size, k_level):
     return data_bert.obtain_general_square_sample(sample_size,
                     topic_trees_filtered_contents_test[k_level]["content_id"], topic_trees_filtered_contents_test[k_level]["topic_id_klevel"],
                     data_bert.test_contents_num_id, topics_group_filtered[k_level]["group_test_ids"])
+
+dummy_topics_prod_list = np.empty(shape = len(data_bert.topics_inv_map), dtype = "object")
+
+for k in range(len(dummy_topics_prod_list)):
+    dummy_topics_prod_list[k] = np.array([k])

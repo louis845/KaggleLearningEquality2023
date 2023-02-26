@@ -37,13 +37,13 @@ class TrainingSampler:
     def __init__(self, embedded_vectors_folder, contents_one_hot_file, topics_one_hot_file, device = "gpu"):
         self.device = device
         if device == "gpu":
-            self.contents_description = tf.constant(np.load(embedded_vectors_folder + "contents_description.npy"))
-            self.contents_title = tf.constant(np.load(embedded_vectors_folder + "contents_title.npy"))
-            self.topics_description = tf.constant(np.load(embedded_vectors_folder + "topics_description.npy"))
-            self.topics_title = tf.constant(np.load(embedded_vectors_folder + "topics_title.npy"))
+            self.contents_description = tf.constant(np.load(embedded_vectors_folder + "contents_description.npy"), dtype = tf.float32)
+            self.contents_title = tf.constant(np.load(embedded_vectors_folder + "contents_title.npy"), dtype = tf.float32)
+            self.topics_description = tf.constant(np.load(embedded_vectors_folder + "topics_description.npy"), dtype = tf.float32)
+            self.topics_title = tf.constant(np.load(embedded_vectors_folder + "topics_title.npy"), dtype = tf.float32)
 
-            self.contents_one_hot = tf.constant(np.load(contents_one_hot_file))
-            self.topics_one_hot = tf.constant(np.load(topics_one_hot_file))
+            self.contents_one_hot = tf.constant(np.load(contents_one_hot_file), dtype = tf.float32)
+            self.topics_one_hot = tf.constant(np.load(topics_one_hot_file), dtype = tf.float32)
         else:
             self.contents_description = np.load(embedded_vectors_folder + "contents_description.npy")
             self.contents_title = np.load(embedded_vectors_folder + "contents_title.npy")
@@ -154,7 +154,10 @@ class TrainingSampler:
         topics_ragged_list = np.empty(shape=(len(topics_id_klevel)), dtype="object")
         for level in range(np.min(tree_levels), np.max(tree_levels) + 1):
             llocs = tree_levels == level
-            topics_ragged_list[llocs] = data_bert_tree_struct.topics_group_filtered[level]["group_filter_available"][topics_id_klevel[llocs]]
+            if level == np.max(tree_levels): # last level is usual data
+                topics_ragged_list[llocs] = data_bert_tree_struct.dummy_topics_prod_list[topics_id_klevel[llocs]]
+            else:
+                topics_ragged_list[llocs] = data_bert_tree_struct.topics_group_filtered[level]["group_filter_available"][topics_id_klevel[llocs]]
         topics_ragged_list = list(topics_ragged_list)
         contents_ragged_list = [np.repeat(contents_id[k], len(topics_ragged_list[k])) for k in range(len(topics_ragged_list))]
 
@@ -183,8 +186,10 @@ class TrainingSampler:
         topics_ragged_list = np.empty(shape=(len(topics_id_klevel)), dtype="object")
         for level in range(np.min(tree_levels), np.max(tree_levels) + 1):
             llocs = tree_levels == level
-            topics_ragged_list[llocs] = data_bert_tree_struct.topics_group_filtered[level]["group_filter_available"][
-                topics_id_klevel[llocs]]
+            if level == np.max(tree_levels):  # last level is usual data
+                topics_ragged_list[llocs] = data_bert_tree_struct.dummy_topics_prod_list[topics_id_klevel[llocs]]
+            else:
+                topics_ragged_list[llocs] = data_bert_tree_struct.topics_group_filtered[level]["group_filter_available"][topics_id_klevel[llocs]]
         topics_ragged_list = list(topics_ragged_list)
         contents_ragged_list = [np.repeat(contents_id[k], len(topics_ragged_list[k])) for k in
                                 range(len(topics_ragged_list))]
@@ -195,7 +200,7 @@ class TrainingSampler:
         contents_ragged_list = tf.ragged.constant(contents_ragged_list)
         dummy_ragged_list = tf.ragged.constant(dummy_ragged_list)
 
-        dummy_zeros = tf.zeros(shape = (1, self.contents_title.shape[1]))
+        dummy_zeros = tf.zeros(shape = (1, self.topics_one_hot.shape[1]), dtype = tf.float32)
         input_data = {
             "contents": {
                 "description": tf.gather(self.contents_description, contents_ragged_list, axis=0),
@@ -241,7 +246,7 @@ class Model(tf.keras.Model):
         self.concat_layer = tf.keras.layers.Concatenate(axis = 2)
 
         # standard stuff
-        self.dropout0 = tf.keras.layers.GaussianDropout(rate=0.2)
+        self.dropout0 = tf.keras.layers.GaussianNoise(stddev = 0.015)
         self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense1")
         self.dropout1 = tf.keras.layers.Dropout(rate=0.1)
         self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense2")
@@ -301,7 +306,11 @@ class Model(tf.keras.Model):
         # combine the (batch_size x set_size x (bert_embedding_size / num_langs)) tensors into (batch_size x set_size x (bert_embedding_size*2+num_langs+bert_embedding_size*2+num_langs))
         embedding_result = self.concat_layer([contents_description, contents_title, contents_lang, topics_description, topics_title, topics_lang])
 
-        t = self.dropout0(embedding_result, training=training)
+        shape = embedding_result.shape
+        if len([1 for k in range(int(shape.rank)) if shape[k] is None]) > 0:
+            t = tf.ragged.map_flat_values(self.dropout0, embedding_result, training=training)
+        else:
+            t = self.dropout0(embedding_result, training=training)
         t = self.dropout1(self.dense1(t), training=training)
         t = self.dropout2(self.dense2(t), training=training)
         t = self.dropout3(self.dense3(t), training=training)

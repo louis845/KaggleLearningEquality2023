@@ -218,7 +218,7 @@ class DefaultTreeSampler(SamplerBase):
             # the functions to verify whether a tuple (content, topic) has correlations.
 
             self.sample_tree_abundances_train = data_bert_tree_struct.topic_trees_filtered_abundances_train
-            self.sample_tree_abundances_test = data_bert_tree_struct.topic_trees_filtered_abundances_train
+            self.sample_tree_abundances_test = data_bert_tree_struct.topic_trees_filtered_abundances_test
             self.generation_sizes = [7, 17, 20, 33, 33]
         else:
             assert len(sample_tree_generation_functions) == len(sample_tree_verification_functions)
@@ -276,7 +276,7 @@ class DefaultTreeSampler(SamplerBase):
             cors_tree.append(crs)
 
             multipliers[start:(start+len(cts))] = multipliers[start:(start+len(cts))] * np.array(
-                [len(data_bert_tree_struct.topics_group_filtered[k]["group_filter_available"][topic_tree_klevel_id]) for topic_tree_klevel_id in topics_tree]
+                [len(data_bert_tree_struct.topics_group_filtered[k]["group_filter_available"][topic_tree_klevel_id]) for topic_tree_klevel_id in tps]
             )
 
             assert (tree_levels[start:(start+len(cts))] != k).sum() == 0
@@ -319,7 +319,7 @@ class DefaultTreeSampler(SamplerBase):
 
             multipliers[start:(start + len(cts))] = multipliers[start:(start + len(cts))] * np.array(
                 [len(data_bert_tree_struct.topics_group_filtered[k]["group_filter_available"][topic_tree_klevel_id]) for
-                 topic_tree_klevel_id in topics_tree]
+                 topic_tree_klevel_id in tps]
             )
 
             assert (tree_levels[start:(start + len(cts))] != k).sum() == 0
