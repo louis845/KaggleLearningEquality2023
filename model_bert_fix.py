@@ -248,15 +248,22 @@ class Model(tf.keras.Model):
         # standard stuff
         self.dropout0 = tf.keras.layers.GaussianNoise(stddev = 0.015)
         self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense1")
-        self.dropout1 = tf.keras.layers.Dropout(rate=0.1)
+        self.dropout1 = tf.keras.layers.Dropout(rate=0.3)
         self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense2")
-        self.dropout2 = tf.keras.layers.Dropout(rate=0.1)
+        self.dropout2 = tf.keras.layers.Dropout(rate=0.3)
         self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense3")
-        self.dropout3 = tf.keras.layers.Dropout(rate=0.1)
-        self.dense4 = tf.keras.layers.Dense(units= (units_size // 4), name = "dense4")
-        self.relu4 = tf.keras.layers.ReLU()
-        self.dropout4 = tf.keras.layers.Dropout(rate=0.1)
-        self.dense5 = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "dense5")
+        self.dropout3 = tf.keras.layers.Dropout(rate=0.3)
+        self.dense4 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense4")
+        self.dropout4 = tf.keras.layers.Dropout(rate=0.3)
+        self.dense5 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense5")
+        self.dropout5 = tf.keras.layers.Dropout(rate=0.3)
+        self.dense6 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense6")
+        self.dropout6 = tf.keras.layers.Dropout(rate=0.3)
+        self.dense7 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense7")
+        self.dropout7 = tf.keras.layers.Dropout(rate=0.3)
+        self.dense8 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense8")
+        self.dropout8 = tf.keras.layers.Dropout(rate=0.3)
+        self.dense9 = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "dense9")
 
 
         # loss functions and eval metrics
@@ -314,9 +321,15 @@ class Model(tf.keras.Model):
         t = self.dropout1(self.dense1(t), training=training)
         t = self.dropout2(self.dense2(t), training=training)
         t = self.dropout3(self.dense3(t), training=training)
-        t = self.dropout4(self.relu4(self.dense4(t)), training=training)
-        t = self.dense5(t) # now we have a batch_size x set_size x 1 tensor, the last axis is reduced to 1 by linear transforms.
-        if training and actual_y is not None: # here we use overestimation training method for the set
+        t = self.dropout4(self.dense4(t), training=training)
+        t = self.dropout5(self.dense5(t), training=training)
+        t = self.dropout6(self.dense6(t), training=training)
+        t = self.dropout7(self.dense7(t), training=training)
+        t = self.dropout8(self.dense8(t), training=training)
+        t = self.dense9(t) # now we have a batch_size x set_size x 1 tensor, the last axis is reduced to 1 by linear transforms.
+        if training and actual_y is not None and actual_y.shape[0] is not None and actual_y.shape[0] == shape[0]: # here we use overestimation training method for the set
+            t = tf.clip_by_value(t, clip_value_min=0.05, clip_value_max=0.95)
+
             p = 4.0
             pmean = tf.math.pow(t, p)
             pmean = tf.reduce_mean(pmean, axis = 1)
@@ -582,6 +595,13 @@ class DynamicMetrics(CustomMetrics):
                 return mmetrics[3].result()
         raise Exception("No metrics found!")
 
+    def get_total_tree_metric(self):
+        sum = 0.0
+        for k in range(len(self.tree_metrics)):
+            mmetrics = self.tree_metrics[k]["metrics"]
+            sum += mmetrics[3].result()
+        return sum + self.get_test_entropy_metric()
+
 default_metrics = DynamicMetrics()
 default_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST)
 default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
@@ -631,5 +651,27 @@ class DefaultStoppingFunc(CustomStoppingFunc):
                     return True
         else:
             current_test_small_entropy = custom_metrics.get_test_entropy_metric()
+            self.lowest_test_small_entropy = current_test_small_entropy
+        return False
+
+class DefaultTreeStoppingFunc(CustomStoppingFunc):
+    def __init__(self, model_dir):
+        CustomStoppingFunc.__init__(self, model_dir)
+        self.lowest_test_small_entropy = None
+        self.countdown = 0
+
+    def evaluate(self, custom_metrics, model):
+        if self.lowest_test_small_entropy is not None:
+            current_test_small_entropy = custom_metrics.get_total_tree_metric()
+            if current_test_small_entropy < self.lowest_test_small_entropy:
+                self.lowest_test_small_entropy = current_test_small_entropy
+                model.save_weights(self.model_dir + "/best_test_small_entropy.ckpt")
+                self.countdown = 0
+            elif current_test_small_entropy > self.lowest_test_small_entropy * 1.005:
+                self.countdown += 1
+                if self.countdown > 10:
+                    return True
+        else:
+            current_test_small_entropy = custom_metrics.get_total_tree_metric()
             self.lowest_test_small_entropy = current_test_small_entropy
         return False
