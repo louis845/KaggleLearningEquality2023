@@ -78,14 +78,14 @@ class TrainingSampler:
         else:
             input_data = {
                 "contents": {
-                    "description": tf.constant(np.take(self.contents_description, np.expand_dims(contents_id, axis=1), axis=0)),
-                    "title": tf.constant(np.take(self.contents_title, np.expand_dims(contents_id, axis=1), axis=0)),
-                    "lang": tf.constant(np.take(self.contents_one_hot, np.expand_dims(contents_id, axis=1), axis=0))
+                    "description": tf.constant(np.take(self.contents_description, np.expand_dims(contents_id, axis=1), axis=0), dtype = tf.float32),
+                    "title": tf.constant(np.take(self.contents_title, np.expand_dims(contents_id, axis=1), axis=0), dtype = tf.float32),
+                    "lang": tf.constant(np.take(self.contents_one_hot, np.expand_dims(contents_id, axis=1), axis=0), dtype = tf.float32)
                 },
                 "topics": {
-                    "description": tf.constant(np.take(self.topics_description, np.expand_dims(topics_id, axis=1), axis=0)),
-                    "title": tf.constant(np.take(self.topics_title, np.expand_dims(topics_id, axis=1), axis=0)),
-                    "lang": tf.constant(np.take(self.topics_one_hot, np.expand_dims(topics_id, axis=1), axis=0))
+                    "description": tf.constant(np.take(self.topics_description, np.expand_dims(topics_id, axis=1), axis=0), dtype = tf.float32),
+                    "title": tf.constant(np.take(self.topics_title, np.expand_dims(topics_id, axis=1), axis=0), dtype = tf.float32),
+                    "lang": tf.constant(np.take(self.topics_one_hot, np.expand_dims(topics_id, axis=1), axis=0), dtype = tf.float32)
                 }
             }
         return input_data
@@ -97,12 +97,12 @@ class TrainingSampler:
                 "contents": {
                     "description": tf.gather(self.contents_description, np.expand_dims(contents_id, axis = 1), axis=0),
                     "title": tf.gather(self.contents_title, np.expand_dims(contents_id, axis = 1), axis=0),
-                    "lang": tf.constant(np.zeros(shape = (len(contents_id), 1, self.contents_one_hot.shape[1])))
+                    "lang": tf.constant(np.zeros(shape = (len(contents_id), 1, self.contents_one_hot.shape[1])), dtype = tf.float32)
                 },
                 "topics": {
                     "description": tf.gather(self.topics_description, np.expand_dims(topics_id, axis = 1), axis=0),
                     "title": tf.gather(self.topics_title, np.expand_dims(topics_id, axis = 1), axis=0),
-                    "lang": tf.constant(np.zeros(shape = (len(topics_id), 1, self.contents_one_hot.shape[1])))
+                    "lang": tf.constant(np.zeros(shape = (len(topics_id), 1, self.contents_one_hot.shape[1])), dtype = tf.float32)
                 }
             }
         else:
@@ -110,12 +110,12 @@ class TrainingSampler:
                 "contents": {
                     "description": tf.constant(np.take(self.contents_description, np.expand_dims(contents_id, axis=1), axis=0)),
                     "title": tf.constant(np.take(self.contents_title, np.expand_dims(contents_id, axis=1), axis=0)),
-                    "lang": tf.constant(np.zeros(shape=(len(contents_id), 1, self.contents_one_hot.shape[1])))
+                    "lang": tf.constant(np.zeros(shape=(len(contents_id), 1, self.contents_one_hot.shape[1])), dtype = tf.float32)
                 },
                 "topics": {
                     "description": tf.constant(np.take(self.topics_description, np.expand_dims(topics_id, axis=1), axis=0)),
                     "title": tf.constant(np.take(self.topics_title, np.expand_dims(topics_id, axis=1), axis=0)),
-                    "lang": tf.constant(np.zeros(shape=(len(topics_id), 1, self.contents_one_hot.shape[1])))
+                    "lang": tf.constant(np.zeros(shape=(len(topics_id), 1, self.contents_one_hot.shape[1])), dtype = tf.float32)
                 }
             }
         return input_data
@@ -146,7 +146,7 @@ class TrainingSampler:
     # is given by data_bert_tree_struct.topics_group_filtered[tree_levels[j]]["group_filter_available"][topics_id_klevel[j]].
     # The topic_num_id of the root node of the subtree is
     # data_bert_tree_struct.topics_group_filtered[tree_levels[j]]["group_ids"][topics_id_klevel[j]]
-    def obtain_input_data_tree(self, topics_id_klevel, contents_id, tree_levels):
+    def obtain_input_data_tree(self, topics_id_klevel, contents_id, tree_levels, final_level):
         if self.device != "gpu":
             raise Exception("Must use GPU for tree learning!")
         assert len(topics_id_klevel) == len(contents_id) and len(contents_id) == len(tree_levels)
@@ -154,7 +154,7 @@ class TrainingSampler:
         topics_ragged_list = np.empty(shape=(len(topics_id_klevel)), dtype="object")
         for level in range(np.min(tree_levels), np.max(tree_levels) + 1):
             llocs = tree_levels == level
-            if level == np.max(tree_levels): # last level is usual data
+            if level == final_level: # last level is usual data
                 topics_ragged_list[llocs] = data_bert_tree_struct.dummy_topics_prod_list[topics_id_klevel[llocs]]
             else:
                 topics_ragged_list[llocs] = data_bert_tree_struct.topics_group_filtered[level]["group_filter_available"][topics_id_klevel[llocs]]
@@ -178,7 +178,7 @@ class TrainingSampler:
         return input_data
 
     # same thing, except that the lang one-hot columns are all zeros.
-    def obtain_input_data_tree_filter_lang(self, topics_id_klevel, contents_id, tree_levels):
+    def obtain_input_data_tree_filter_lang(self, topics_id_klevel, contents_id, tree_levels, final_level):
         if self.device != "gpu":
             raise Exception("Must use GPU for tree learning!")
         assert len(topics_id_klevel) == len(contents_id) and len(contents_id) == len(tree_levels)
@@ -186,7 +186,7 @@ class TrainingSampler:
         topics_ragged_list = np.empty(shape=(len(topics_id_klevel)), dtype="object")
         for level in range(np.min(tree_levels), np.max(tree_levels) + 1):
             llocs = tree_levels == level
-            if level == np.max(tree_levels):  # last level is usual data
+            if level == final_level:  # last level is usual data
                 topics_ragged_list[llocs] = data_bert_tree_struct.dummy_topics_prod_list[topics_id_klevel[llocs]]
             else:
                 topics_ragged_list[llocs] = data_bert_tree_struct.topics_group_filtered[level]["group_filter_available"][topics_id_klevel[llocs]]
@@ -215,9 +215,9 @@ class TrainingSampler:
         }
         return input_data
 
-    def obtain_input_data_tree_both(self, topics_id_klevel, contents_id, tree_levels):
-        with_lang = self.obtain_input_data_tree(topics_id_klevel, contents_id, tree_levels)
-        no_lang = self.obtain_input_data_tree_filter_lang(topics_id_klevel, contents_id, tree_levels)
+    def obtain_input_data_tree_both(self, topics_id_klevel, contents_id, tree_levels, final_level):
+        with_lang = self.obtain_input_data_tree(topics_id_klevel, contents_id, tree_levels, final_level)
+        no_lang = self.obtain_input_data_tree_filter_lang(topics_id_klevel, contents_id, tree_levels, final_level)
 
         input_data = {
             "contents": {
@@ -329,7 +329,7 @@ class Model(tf.keras.Model):
             # if actual_y is 1 we use the pinvmean, to encourage low prob topics to move
             # close to 1. if actual_y is 0 we use pmean, to encourage high prob topics to
             # move close to 0
-            proba = tf.math.add(pinvmean * tf.constant(actual_y), pmean * tf.constant(1 - actual_y))
+            proba = tf.math.add(pinvmean * tf.constant(actual_y, dtype = tf.float32), pmean * tf.constant(1 - actual_y, dtype = tf.float32))
             return proba
         else: # here we just return the probabilities normally. the probability will be computed as the max inside the set
             return tf.squeeze(tf.reduce_max(t, axis = 1), axis = 1)
@@ -354,10 +354,10 @@ class Model(tf.keras.Model):
     def train_step_tree(self):
         for k in range(50):
             topics, contents, cors, class_ids, tree_levels, multipliers = self.tuple_choice_sampler.obtain_train_sample(self.training_sample_size)
-            input_data = self.training_sampler.obtain_input_data_tree_both(topics, contents, tree_levels)
+            input_data = self.training_sampler.obtain_input_data_tree_both(topics, contents, tree_levels, 5)
             cors = np.tile(cors, 2)
-            y = tf.expand_dims(tf.constant(cors), axis = 1)
-            multipliers_tf = tf.constant(np.tile(multipliers, 2))
+            y = tf.expand_dims(tf.constant(cors, dtype = tf.float32), axis = 1)
+            multipliers_tf = tf.constant(np.tile(multipliers, 2), dtype = tf.float32)
 
             with tf.GradientTape() as tape:
                 y_pred = tf.expand_dims(self(input_data, actual_y = cors, training=True), axis = 1)
@@ -377,10 +377,10 @@ class Model(tf.keras.Model):
         # evaluation at larger subset
         topics, contents, cors, class_ids, tree_levels, multipliers = self.tuple_choice_sampler.obtain_train_sample(
             self.training_sample_size)
-        input_data = self.training_sampler.obtain_input_data_tree_both(topics, contents, tree_levels)
+        input_data = self.training_sampler.obtain_input_data_tree_both(topics, contents, tree_levels, 5)
         cors = np.tile(cors, 2)
-        y = tf.expand_dims(tf.constant(cors), axis=1)
-        multipliers_tf = tf.constant(np.tile(multipliers, 2))
+        y = tf.expand_dims(tf.constant(cors, dtype = tf.float32), axis=1)
+        multipliers_tf = tf.constant(np.tile(multipliers, 2), dtype = tf.float32)
         y_pred = tf.expand_dims(self(input_data, actual_y = cors, training=True), axis = 1)
         self.entropy_large_set.update_state(y, y_pred, sample_weight=multipliers_tf)
 
@@ -416,7 +416,7 @@ class Model(tf.keras.Model):
             topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(self.training_sample_size)
             input_data = self.training_sampler.obtain_input_data_both(topics_id = topics, contents_id = contents)
             cors = np.tile(cors, 2)
-            y = tf.constant(cors)
+            y = tf.constant(cors, dtype = tf.float32)
 
             with tf.GradientTape() as tape:
                 y_pred = self(input_data, training=True)
@@ -437,7 +437,7 @@ class Model(tf.keras.Model):
         topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(min(len(data_bert.train_contents), limit))
         cors = np.tile(cors, 2)
         input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
-        y = tf.constant(cors)
+        y = tf.constant(cors, dtype = tf.float32)
         y_pred = self(input_data)
         self.entropy_large_set.update_state(y, y_pred)
 
@@ -518,7 +518,7 @@ class DynamicMetrics(CustomMetrics):
         precision_nolang = tf.keras.metrics.Precision(name=name + "_precision_nolang", thresholds=threshold)
         recall_nolang = tf.keras.metrics.Recall(name=name + "_recall_nolang", thresholds=threshold)
         entropy_nolang = tf.keras.metrics.BinaryCrossentropy(name=name + "_entropy_nolang")
-        self.metrics.append({"metrics": [accuracy, precision, recall, entropy, accuracy_nolang, precision_nolang, recall_nolang, entropy_nolang], "sampler": tuple_choice_sampler_tree, "sample_choice": sample_choice, "level": level})
+        self.tree_metrics.append({"metrics": [accuracy, precision, recall, entropy, accuracy_nolang, precision_nolang, recall_nolang, entropy_nolang], "sampler": tuple_choice_sampler_tree, "sample_choice": sample_choice, "level": level})
 
     def update_metrics(self, model, sample_size_limit):
         for k in range(len(self.metrics)):
@@ -535,7 +535,7 @@ class DynamicMetrics(CustomMetrics):
             elif sample_choice == DynamicMetrics.TEST_SQUARE:
                 topics, contents, cors, class_id = sampler.obtain_test_square_sample(min(360000, sample_size_limit))
             input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
-            y = tf.constant(cors)
+            y = tf.constant(cors, dtype = tf.float32)
             y_pred = model(input_data)
             for j in range(4):
                 kmetrics[j].update_state(y, y_pred)
@@ -546,10 +546,10 @@ class DynamicMetrics(CustomMetrics):
                 kmetrics[j].update_state(y, y_pred)
 
         for k in range(len(self.tree_metrics)):
-            kmetrics = self.metrics[k]["metrics"]
-            sampler = self.metrics[k]["sampler"]
-            sample_choice = self.metrics[k]["sample_choice"]
-            level = self.metrics[k]["level"]
+            kmetrics = self.tree_metrics[k]["metrics"]
+            sampler = self.tree_metrics[k]["sampler"]
+            sample_choice = self.tree_metrics[k]["sample_choice"]
+            level = self.tree_metrics[k]["level"]
 
             if sample_choice == DynamicMetrics.TRAIN:
                 topics, contents, cors = sampler.obtain_tree_train_sample(min(50, sample_size_limit), level)
@@ -559,18 +559,20 @@ class DynamicMetrics(CustomMetrics):
                 topics, contents, cors = sampler.obtain_tree_test_sample(min(50, sample_size_limit), level)
             elif sample_choice == DynamicMetrics.TEST_SQUARE:
                 topics, contents, cors = sampler.obtain_tree_test_square_sample(min(7, sample_size_limit), level)
-            input_data = self.training_sampler.obtain_input_data_tree(topics_id=topics, contents_id=contents)
-            y = tf.constant(cors)
+            input_data = self.training_sampler.obtain_input_data_tree(topics_id_klevel=topics, contents_id=contents,
+                                                                      tree_levels=np.repeat(level, len(cors)),final_level=5)
+            y = tf.constant(cors, dtype = tf.float32)
             y_pred = model(input_data)
             for j in range(4):
                 kmetrics[j].update_state(y, y_pred)
 
-            input_data = self.training_sampler.obtain_input_data_tree_filter_lang(topics_id=topics, contents_id=contents)
+            input_data = self.training_sampler.obtain_input_data_tree_filter_lang(topics_id_klevel=topics, contents_id=contents,
+                                                                      tree_levels=np.repeat(level, len(cors)),final_level=5)
             y_pred = model(input_data)
             for j in range(4,8):
                 kmetrics[j].update_state(y, y_pred)
     def obtain_metrics(self):
-        metrics_list = [metr for met in self.metrics for metr in met["metrics"]]
+        metrics_list = [metr for met in self.metrics for metr in met["metrics"]] + [metr for met in self.tree_metrics for metr in met["metrics"]]
         return {m.name: m.result() for m in metrics_list}
 
     def get_test_entropy_metric(self):
