@@ -255,13 +255,13 @@ class Model(tf.keras.Model):
         self.dropout3 = tf.keras.layers.Dropout(rate=0.3)
         self.dense4 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense4")
         self.dropout4 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense5 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense5")
+        self.dense5 = tf.keras.layers.Dense(units=units_size // 2, activation="relu", name="dense5")
         self.dropout5 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense6 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense6")
+        self.dense6 = tf.keras.layers.Dense(units=units_size // 2, activation="relu", name="dense6")
         self.dropout6 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense7 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense7")
+        self.dense7 = tf.keras.layers.Dense(units=units_size // 2, activation="relu", name="dense7")
         self.dropout7 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense8 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense8")
+        self.dense8 = tf.keras.layers.Dense(units=units_size // 4, activation="relu", name="dense8")
         self.dropout8 = tf.keras.layers.Dropout(rate=0.3)
         self.dense9 = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "dense9")
 
@@ -303,7 +303,9 @@ class Model(tf.keras.Model):
 
     # for training, we feed in actual_y to overdetermine the predictions. if actual_y is not fed in,
     # usual gradient descent will be used. actual_y should be a (batch_size) numpy vector.
-    def call(self, data, training=False, actual_y = None):
+    # for tree learning, final_tree_level is a boolean mask to indicate which batches are
+    # in the final level (individual level), which batches are tree batches.
+    def call(self, data, training=False, actual_y = None, final_tree_level = None):
         contents_description = data["contents"]["description"]
         contents_title = data["contents"]["title"]
         contents_lang = data["contents"]["lang"]
@@ -327,22 +329,28 @@ class Model(tf.keras.Model):
         t = self.dropout7(self.dense7(t), training=training)
         t = self.dropout8(self.dense8(t), training=training)
         t = self.dense9(t) # now we have a batch_size x set_size x 1 tensor, the last axis is reduced to 1 by linear transforms.
-        if training and actual_y is not None and actual_y.shape[0] is not None and actual_y.shape[0] == shape[0]: # here we use overestimation training method for the set
-            t = tf.clip_by_value(t, clip_value_min=0.05, clip_value_max=0.95)
-
+        if (training and actual_y is not None and actual_y.shape[0] is not None
+            and actual_y.shape[0] == shape[0] and final_tree_level is not None and
+                final_tree_level.shape[0] is not None and final_tree_level.shape[0] == shape[0]): # here we use overestimation training method for the set
             p = 4.0
-            pmean = tf.math.pow(t, p)
+            tclip = tf.clip_by_value(t, clip_value_min=0.05, clip_value_max=0.95)
+            pmean = tf.math.pow(tclip, p)
             pmean = tf.reduce_mean(pmean, axis = 1)
             pmean = tf.squeeze(tf.math.pow(pmean, 1 / p), axis = 1)
 
-            pinvmean = tf.math.pow(t, 1 / p)
+            pinvmean = tf.math.pow(tclip, p)
             pinvmean = tf.reduce_mean(pinvmean, axis=1)
-            pinvmean = tf.squeeze(tf.math.pow(pinvmean, p), axis = 1)
+            pinvmean = tf.clip_by_value(tf.squeeze(tf.math.pow(pinvmean, 1 / p), axis = 1),
+                                        clip_value_min=0.05, clip_value_max=0.55)
             # note that pmean and pinvmean are "close" to max, harmonic mean respectively.
             # if actual_y is 1 we use the pinvmean, to encourage low prob topics to move
             # close to 1. if actual_y is 0 we use pmean, to encourage high prob topics to
             # move close to 0
-            proba = tf.math.add(pinvmean * tf.constant(actual_y, dtype = tf.float32), pmean * tf.constant(1 - actual_y, dtype = tf.float32))
+            proba = tf.math.add(pinvmean * tf.constant(actual_y, dtype = tf.float32),
+                                pmean * tf.constant(1 - actual_y, dtype = tf.float32))
+
+            proba = tf.math.add(tf.squeeze(tf.reduce_max(t, axis = 1), axis = 1) * tf.constant(final_tree_level, dtype=tf.float32),
+                                proba * tf.constant(1 - final_tree_level, dtype=tf.float32))
             return proba
         else: # here we just return the probabilities normally. the probability will be computed as the max inside the set
             return tf.squeeze(tf.reduce_max(t, axis = 1), axis = 1)
@@ -371,9 +379,10 @@ class Model(tf.keras.Model):
             cors = np.tile(cors, 2)
             y = tf.expand_dims(tf.constant(cors, dtype = tf.float32), axis = 1)
             multipliers_tf = tf.constant(np.tile(multipliers, 2), dtype = tf.float32)
+            final_tree_level = (tree_levels == 5).astype(dtype=np.float32)
 
             with tf.GradientTape() as tape:
-                y_pred = tf.expand_dims(self(input_data, actual_y = cors, training=True), axis = 1)
+                y_pred = tf.expand_dims(self(input_data, actual_y = cors, training=True, final_tree_level = final_tree_level), axis = 1)
                 loss = self.loss(y, y_pred, sample_weight=multipliers_tf)
 
             trainable_vars = self.trainable_weights
@@ -394,7 +403,9 @@ class Model(tf.keras.Model):
         cors = np.tile(cors, 2)
         y = tf.expand_dims(tf.constant(cors, dtype = tf.float32), axis=1)
         multipliers_tf = tf.constant(np.tile(multipliers, 2), dtype = tf.float32)
-        y_pred = tf.expand_dims(self(input_data, actual_y = cors, training=True), axis = 1)
+        final_tree_level = (tree_levels == 5).astype(dtype=np.float32)
+
+        y_pred = tf.expand_dims(self(input_data, actual_y = cors, training=True, final_tree_level=final_tree_level), axis = 1)
         self.entropy_large_set.update_state(y, y_pred, sample_weight=multipliers_tf)
 
         new_entropy = self.entropy_large_set.result()
