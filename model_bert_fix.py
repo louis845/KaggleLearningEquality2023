@@ -108,13 +108,13 @@ class TrainingSampler:
         else:
             input_data = {
                 "contents": {
-                    "description": tf.constant(np.take(self.contents_description, np.expand_dims(contents_id, axis=1), axis=0)),
-                    "title": tf.constant(np.take(self.contents_title, np.expand_dims(contents_id, axis=1), axis=0)),
+                    "description": tf.constant(np.take(self.contents_description, np.expand_dims(contents_id, axis=1), axis=0), dtype = tf.float32),
+                    "title": tf.constant(np.take(self.contents_title, np.expand_dims(contents_id, axis=1), axis=0), dtype = tf.float32),
                     "lang": tf.constant(np.zeros(shape=(len(contents_id), 1, self.contents_one_hot.shape[1])), dtype = tf.float32)
                 },
                 "topics": {
-                    "description": tf.constant(np.take(self.topics_description, np.expand_dims(topics_id, axis=1), axis=0)),
-                    "title": tf.constant(np.take(self.topics_title, np.expand_dims(topics_id, axis=1), axis=0)),
+                    "description": tf.constant(np.take(self.topics_description, np.expand_dims(topics_id, axis=1), axis=0), dtype = tf.float32),
+                    "title": tf.constant(np.take(self.topics_title, np.expand_dims(topics_id, axis=1), axis=0), dtype = tf.float32),
                     "lang": tf.constant(np.zeros(shape=(len(topics_id), 1, self.contents_one_hot.shape[1])), dtype = tf.float32)
                 }
             }
