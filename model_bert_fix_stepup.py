@@ -71,15 +71,18 @@ class Model(tf.keras.Model):
     # the first column is for the full model prediction array, the second column for the intermediate
     # prediction
     def call(self, data, training=False, actual_y=None):
-        contents_description = data["contents"]["description"]
-        contents_title = data["contents"]["title"]
-        contents_lang = data["contents"]["lang"]
-        topics_description = data["topics"]["description"]
-        topics_title = data["topics"]["title"]
-        topics_lang = data["topics"]["lang"]
-        # combine the (batch_size x set_size x (bert_embedding_size / num_langs)) tensors into (batch_size x set_size x (bert_embedding_size*2+num_langs+bert_embedding_size*2+num_langs))
-        embedding_result = self.concat_layer(
-            [contents_description, contents_title, contents_lang, topics_description, topics_title, topics_lang])
+        if type(data) == dict:
+            contents_description = data["contents"]["description"]
+            contents_title = data["contents"]["title"]
+            contents_lang = data["contents"]["lang"]
+            topics_description = data["topics"]["description"]
+            topics_title = data["topics"]["title"]
+            topics_lang = data["topics"]["lang"]
+            # combine the (batch_size x set_size x (bert_embedding_size / num_langs)) tensors into (batch_size x set_size x (bert_embedding_size*2+num_langs+bert_embedding_size*2+num_langs))
+            embedding_result = self.concat_layer(
+                [contents_description, contents_title, contents_lang, topics_description, topics_title, topics_lang])
+        else:
+            embedding_result = data
 
         first_layer = self.dropout0(embedding_result, training=training)
         t = self.dropout1(self.dense1(first_layer), training=training)

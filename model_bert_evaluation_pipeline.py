@@ -8,6 +8,7 @@ import time
 import data_bert
 import math
 import gc
+import tensorflow as tf
 
 class ObtainProbabilitiesCallback:
     def __init__(self):
@@ -17,23 +18,32 @@ class ObtainProbabilitiesCallback:
     # the first axis (n) is the batch_size axis, which means the prediction function predicts n probabilities
     # the second axis (k) is the vector embedding axis, which is either obtained from BERT or other models
     # if succeeded, return the probabilities. if failed, return None.
-    def predict_probabilities(self, unified_topics_contents_vector):
+    def predict_probabilities(self, unified_topics_contents_vector, device):
         pass
 
     # helper function, do not override.
-    def predict_probabilities_with_data(self, topics_id, contents_id, full_topics_vect_data, full_contents_vect_data):
-        topics_vector = full_topics_vect_data[topics_id,:]
-        contents_vector = full_contents_vect_data[contents_id,:]
-        return self.predict_probabilities(np.concatenate([contents_vector, topics_vector], axis = 1))
+    def predict_probabilities_with_data(self, topics_id, contents_id, full_topics_vect_data, full_contents_vect_data, device):
+        if device == "gpu":
+            topics_vector = tf.gather(full_topics_vect_data, topics_id, axis = 0)
+            contents_vector = tf.gather(full_contents_vect_data, contents_id, axis = 0)
+            return self.predict_probabilities(tf.concat([contents_vector, topics_vector], axis=1), device)
+        else:
+            topics_vector = full_topics_vect_data[topics_id,:]
+            contents_vector = full_contents_vect_data[contents_id,:]
+            return self.predict_probabilities(np.concatenate([contents_vector, topics_vector], axis = 1), device)
 
-def predict_rows(proba_callback, topic_id_rows, contents_restrict, full_topics_data, full_contents_data):
-    topics_id = np.repeat(topic_id_rows, len(contents_restrict))
-    contents_id = np.tile(contents_restrict, len(topic_id_rows))
+def predict_rows(proba_callback, topic_id_rows, contents_restrict, full_topics_data, full_contents_data, device):
+    if device == "gpu":
+        topics_id = tf.repeat(tf.constant(topic_id_rows), len(contents_restrict))
+        contents_id = tf.tile(tf.constant(contents_restrict), [len(topic_id_rows)])
+    else:
+        topics_id = np.repeat(topic_id_rows, len(contents_restrict))
+        contents_id = np.tile(contents_restrict, len(topic_id_rows))
     probabilities = proba_callback.predict_probabilities_with_data(topics_id, contents_id, full_topics_data,
-                                                                   full_contents_data)
+                                                                   full_contents_data, device)
     return probabilities
 
-default_topk_values = (np.arange(10) + 1) * 3  # TODO - find optimal topk
+default_topk_values = (np.arange(15) + 1) * 3  # TODO - find optimal topk
 
 def get_topk(x, k):
     res = np.argpartition(x, kth = -k, axis = 1)[:, -k:]
@@ -44,7 +54,7 @@ def get_topk(x, k):
 # topics_restrict, contents_restrict are np arrays containing the restrictions to topics and contents respectively
 # usually this is used to restrict it to test set. topk_values are the topk probas for the model to choose from.
 # by default, it is
-def obtain_rowwise_topk(proba_callback, topics_restrict, contents_restrict, full_topics_data, full_contents_data, topk_values = None, greedy_multiple_rows = 40):
+def obtain_rowwise_topk(proba_callback, topics_restrict, contents_restrict, full_topics_data, full_contents_data, topk_values = None, greedy_multiple_rows = 40, device = "gpu", max_batch_size = 40):
     if topk_values is None:
         topk_values = default_topk_values
 
@@ -63,11 +73,15 @@ def obtain_rowwise_topk(proba_callback, topics_restrict, contents_restrict, full
     tlow = 0
     continuous_success = 0
     prev_tlow = 0
+    ctime = 0
     while tlow < length:
         thigh = min(tlow + batch_size, length)
         topic_id_rows = topics_restrict[np.arange(tlow, thigh)]
-        probabilities = predict_rows(proba_callback, topic_id_rows, contents_restrict, full_topics_data,
-                                     full_contents_data)
+        try:
+            probabilities = predict_rows(proba_callback, topic_id_rows, contents_restrict, full_topics_data,
+                                         full_contents_data, device = device)
+        except tf.errors.ResourceExhaustedError as err:
+            probabilities = None
         if probabilities is not None:
             probabilities = probabilities.reshape((thigh - tlow), len(contents_restrict))
             sorted_locs = get_topk(probabilities, max_topk)
@@ -77,17 +91,20 @@ def obtain_rowwise_topk(proba_callback, topics_restrict, contents_restrict, full
             # if success we update
             tlow = thigh
             continuous_success += 1
-            if continuous_success == 10:
+            if continuous_success == 3:
                 continuous_success = 0
-                batch_size = max(int(batch_size * 1.7), batch_size + 1)
+                batch_size = min(batch_size + 1, max_batch_size)
 
-            if tlow - prev_tlow > 1000:
-                print(tlow, "completed.")
+            if tlow - prev_tlow > 50:
+                ctime = time.time() - ctime
+                print(tlow, "completed. out of:", length, "  batch size:", batch_size, "  time used:", ctime)
                 prev_tlow = tlow
+                ctime = time.time()
         else:
-            batch_size = max(int(batch_size / 1.3), 1)
+            batch_size = max(batch_size - 1, 1)
+            max_batch_size = batch_size
             continuous_success = 0
-            gc.collect()
+        gc.collect()
 
     return topk_preds
 
