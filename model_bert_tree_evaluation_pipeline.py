@@ -94,6 +94,7 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
     # in topic_preorder_id. the bit at the (topic_num_id, topic_preorder_id) position will signify whether the
     # topic represented by topic_num_id is a (non-strict) ancestor or the topic represented by topic_preorder_id.
 
+
     # dict of np arrays, where each np array is len(topics_restrict) x topk_values[i], where each row contains the topk predictions
     topk_preds = {}
     for i in range(len(topk_values)):
