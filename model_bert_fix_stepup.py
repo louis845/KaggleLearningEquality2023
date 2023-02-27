@@ -20,31 +20,34 @@ class Model(tf.keras.Model):
         self.concat_layer = tf.keras.layers.Concatenate(axis=2, name = "initial_concat")
 
         # standard stuff
-        self.dropout0 = tf.keras.layers.GaussianDropout(rate=0.2)
+        self.dropout0 = tf.keras.layers.GaussianNoise(stddev=0.015)
 
         self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense1")
-        self.dropout1 = tf.keras.layers.Dropout(rate=0.1)
+        self.dropout1 = tf.keras.layers.Dropout(rate=0.3)
         self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense2")
-        self.dropout2 = tf.keras.layers.Dropout(rate=0.1)
+        self.dropout2 = tf.keras.layers.Dropout(rate=0.3)
         self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense3")
-        self.dropout3 = tf.keras.layers.Dropout(rate=0.1)
+        self.dropout3 = tf.keras.layers.Dropout(rate=0.3)
         self.dense4 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense4")
-        self.dropout4 = tf.keras.layers.Dropout(rate=0.1)
+        self.dropout4 = tf.keras.layers.Dropout(rate=0.3)
         # the results of dense2 will be plugged into this.
-        self.denseOvershoot = tf.keras.layers.Dense(units=units_size // 4, activation="relu", name = "denseOvershoot")
-        self.dropoutOvershoot = tf.keras.layers.Dropout(rate=0.1)
+        self.denseOvershoot = tf.keras.layers.Dense(units=units_size, activation="relu", name = "denseOvershoot")
+        self.dropoutOvershoot = tf.keras.layers.Dropout(rate=0.3)
         self.finalOvershoot = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "finalOvershoot")
+
+        # self.dropoutCombine1 = tf.keras.layers.Dropout(rate=0.5)
+        # self.dropoutCombine2 = tf.keras.layers.Dropout(rate=0.5)
 
         # dense1_fp takes in the combined input of dense0 and denseOvershoot
         self.dense1_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense1_fp")
-        self.dropout1_fp = tf.keras.layers.Dropout(rate=0.1)
+        self.dropout1_fp = tf.keras.layers.Dropout(rate=0.3)
         self.dense2_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense2_fp")
-        self.dropout2_fp = tf.keras.layers.Dropout(rate=0.1)
+        self.dropout2_fp = tf.keras.layers.Dropout(rate=0.3)
         self.dense3_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense3_fp")
-        self.dropout3_fp = tf.keras.layers.Dropout(rate=0.1)
+        self.dropout3_fp = tf.keras.layers.Dropout(rate=0.3)
         self.dense4_fp = tf.keras.layers.Dense(units=128, name = "dense4_fp")
         self.relu4 = tf.keras.layers.ReLU()
-        self.dropout4_fp = tf.keras.layers.Dropout(rate=0.1)
+        self.dropout4_fp = tf.keras.layers.Dropout(rate=0.3)
         self.dense5 = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "dense5")
 
         # loss functions and eval metrics
@@ -88,7 +91,10 @@ class Model(tf.keras.Model):
         overshoot_result = self.finalOvershoot(overshoot_fullresult)
 
 
-        t = self.dropout1_fp(self.dense1_fp(tf.concat([first_layer, overshoot_fullresult], axis=-1)), training=training)
+        t = self.dropout1_fp(self.dense1_fp(tf.concat([
+            first_layer,
+            overshoot_fullresult
+        ], axis=-1)), training=training)
         t = self.dropout2_fp(self.dense2_fp(t), training=training)
         t = self.dropout3_fp(self.dense3_fp(t), training=training)
         t = self.dropout4_fp(self.relu4(self.dense4_fp(t)), training=training)
@@ -248,7 +254,7 @@ class Model(tf.keras.Model):
 
             y = tf.constant(y0)
 
-            y_pred = self(input_data, training=True)
+            y_pred = self(input_data)
             y_pred = tf.concat([y_pred[:len(y0_1), 0], y_pred[len(y0_1):len(y0), 1],
                                 y_pred[len(y0):(len(y0)+len(y0_1)), 0], y_pred[(len(y0)+len(y0_1)):(2*len(y0)), 1]], axis = 0)
             self.entropy_large_set.update_state(y, y_pred)
@@ -274,7 +280,7 @@ class Model(tf.keras.Model):
 
             y = tf.constant(y0)
 
-            y_pred = self(input_data, training=True)
+            y_pred = self(input_data)
             y_pred = tf.concat([y_pred[:len(y0_1), 0], y_pred[len(y0_1):len(y0), 1],
                                 y_pred[len(y0):(len(y0)+len(y0_1)), 0], y_pred[(len(y0)+len(y0_1)):(2*len(y0)), 1]], axis = 0)
             self.entropy_large_set.update_state(y, y_pred)
