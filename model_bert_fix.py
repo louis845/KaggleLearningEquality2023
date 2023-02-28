@@ -255,15 +255,9 @@ class Model(tf.keras.Model):
         self.dropout3 = tf.keras.layers.Dropout(rate=0.3)
         self.dense4 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense4")
         self.dropout4 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense5 = tf.keras.layers.Dense(units=units_size // 2, activation="relu", name="dense5")
+        self.dense5 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense5")
         self.dropout5 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense6 = tf.keras.layers.Dense(units=units_size // 2, activation="relu", name="dense6")
-        self.dropout6 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense7 = tf.keras.layers.Dense(units=units_size // 2, activation="relu", name="dense7")
-        self.dropout7 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense8 = tf.keras.layers.Dense(units=units_size // 4, activation="relu", name="dense8")
-        self.dropout8 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense9 = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "dense9")
+        self.dense_final = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "dense_final")
 
 
         # loss functions and eval metrics
@@ -325,10 +319,7 @@ class Model(tf.keras.Model):
         t = self.dropout3(self.dense3(t), training=training)
         t = self.dropout4(self.dense4(t), training=training)
         t = self.dropout5(self.dense5(t), training=training)
-        t = self.dropout6(self.dense6(t), training=training)
-        t = self.dropout7(self.dense7(t), training=training)
-        t = self.dropout8(self.dense8(t), training=training)
-        t = self.dense9(t) # now we have a batch_size x set_size x 1 tensor, the last axis is reduced to 1 by linear transforms.
+        t = self.dense_final(t) # now we have a batch_size x set_size x 1 tensor, the last axis is reduced to 1 by linear transforms.
         if (training and actual_y is not None and actual_y.shape[0] is not None
             and actual_y.shape[0] == shape[0] and final_tree_level is not None and
                 final_tree_level.shape[0] is not None and final_tree_level.shape[0] == shape[0]): # here we use overestimation training method for the set
@@ -351,6 +342,7 @@ class Model(tf.keras.Model):
 
             proba = tf.math.add(tf.squeeze(tf.reduce_max(t, axis = 1), axis = 1) * tf.constant(final_tree_level, dtype=tf.float32),
                                 proba * tf.constant(1 - final_tree_level, dtype=tf.float32))
+            print("--------------------------------------------------test--------------------------------------------------")
             return proba
         else: # here we just return the probabilities normally. the probability will be computed as the max inside the set
             return tf.squeeze(tf.reduce_max(t, axis = 1), axis = 1)
@@ -379,7 +371,7 @@ class Model(tf.keras.Model):
             cors = np.tile(cors, 2)
             y = tf.expand_dims(tf.constant(cors, dtype = tf.float32), axis = 1)
             multipliers_tf = tf.constant(np.tile(multipliers, 2), dtype = tf.float32)
-            final_tree_level = (tree_levels == 5).astype(dtype=np.float32)
+            final_tree_level = np.tile((tree_levels == 5).astype(dtype=np.float32), 2)
 
             with tf.GradientTape() as tape:
                 y_pred = tf.expand_dims(self(input_data, actual_y = cors, training=True, final_tree_level = final_tree_level), axis = 1)
@@ -403,7 +395,7 @@ class Model(tf.keras.Model):
         cors = np.tile(cors, 2)
         y = tf.expand_dims(tf.constant(cors, dtype = tf.float32), axis=1)
         multipliers_tf = tf.constant(np.tile(multipliers, 2), dtype = tf.float32)
-        final_tree_level = (tree_levels == 5).astype(dtype=np.float32)
+        final_tree_level = np.tile((tree_levels == 5).astype(dtype=np.float32), 2)
 
         y_pred = tf.expand_dims(self(input_data, actual_y = cors, training=True, final_tree_level=final_tree_level), axis = 1)
         self.entropy_large_set.update_state(y, y_pred, sample_weight=multipliers_tf)
