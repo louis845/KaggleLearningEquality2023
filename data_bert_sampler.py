@@ -219,7 +219,7 @@ class DefaultTreeSampler(SamplerBase):
 
             self.sample_tree_abundances_train = data_bert_tree_struct.topic_trees_filtered_abundances_train
             self.sample_tree_abundances_test = data_bert_tree_struct.topic_trees_filtered_abundances_test
-            self.generation_sizes = [7, 17, 20, 33, 33]
+            self.generation_sizes = [4, 9, 10, 17, 17]
         else:
             assert len(sample_tree_generation_functions) == len(sample_tree_verification_functions)
             assert len(sample_tree_verification_functions)-1 == len(sample_tree_abundances_train)

@@ -111,8 +111,11 @@ class Model(tf.keras.Model):
             p = 4.0
             tf_actual_y = tf.constant(actual_y, dtype=tf.float32)
             tf_not_actual_y = tf.constant(1 - actual_y, dtype=tf.float32)
-            tf_final_tree_level = tf.constant(final_tree_level, dtype=tf.float32)
-            tf_not_final_tree_level = tf.constant(1 - final_tree_level, dtype=tf.float32)
+            tf_final_tree_level = tf.expand_dims(tf.constant(final_tree_level, dtype=tf.float32), axis=1)
+            tf_not_final_tree_level = tf.expand_dims(tf.constant(1 - final_tree_level, dtype=tf.float32), axis=1)
+
+            tf_final_tree_level = tf.repeat(tf_final_tree_level, repeats=2, axis=1)
+            tf_not_final_tree_level = tf.repeat(tf_not_final_tree_level, repeats=2, axis=1)
 
             t_max_probas = tf.reduce_max(t, axis=1)
             overshoot_max_probas = tf.reduce_max(overshoot_result, axis=1)
@@ -189,7 +192,7 @@ class Model(tf.keras.Model):
         if custom_tuple_choice_sampler_overshoot is not None:
             self.tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot
 
-    def train_step_tree(self, data):
+    def train_step_tree(self):
         for k in range(50):
             # two pass, we first compute on overshoot only, and then compute on the full thing
             ratio1 = 2000.0 / 4000
@@ -206,13 +209,13 @@ class Model(tf.keras.Model):
             contents = np.concatenate([contents, contents2])
             tree_levels = np.concatenate([tree_levels, tree_levels2])
 
-            input_data = self.training_sampler.obtain_input_data_tree_both(topics_id=topics, contents_id=contents,
+            input_data = self.training_sampler.obtain_input_data_tree_both(topics_id_klevel=topics, contents_id=contents,
                                                                            tree_levels=tree_levels, final_level=5)
             y = tf.constant(y0)
             final_tree_level = np.tile((tree_levels == 5).astype(dtype=np.float32), 2)
 
             multipliers_tf = tf.constant(np.tile(
-                np.concat([multipliers, multipliers2 * 4], axis=0),
+                np.concatenate([multipliers, multipliers2 * 4], axis=0),
                 2), dtype=tf.float32)
 
             with tf.GradientTape() as tape:
@@ -246,13 +249,13 @@ class Model(tf.keras.Model):
         contents = np.concatenate([contents, contents2])
         tree_levels = np.concatenate([tree_levels, tree_levels2])
 
-        input_data = self.training_sampler.obtain_input_data_tree_both(topics_id=topics, contents_id=contents,
+        input_data = self.training_sampler.obtain_input_data_tree_both(topics_id_klevel=topics, contents_id=contents,
                                                                        tree_levels=tree_levels, final_level=5)
         y = tf.constant(y0)
         final_tree_level = np.tile((tree_levels == 5).astype(dtype=np.float32), 2)
 
         multipliers_tf = tf.constant(np.tile(
-            np.concat([multipliers, multipliers2 * 4], axis=0),
+            np.concatenate([multipliers, multipliers2 * 4], axis=0),
             2), dtype=tf.float32)
 
         y_pred = self(input_data, training=True, actual_y=y0, final_tree_level=final_tree_level)
@@ -529,9 +532,9 @@ default_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_i
 default_metrics.add_metric("test_square_overshoot", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_SQUARE_OVERSHOOT)
 
 default_tree_metrics = DynamicMetrics()
-default_tree_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST)
-default_tree_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
-default_tree_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
+default_tree_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST)
+default_tree_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
+default_tree_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST)
 default_tree_metrics.add_tree_metric("treelv0", data_bert_sampler.default_tree_sampler_instance, level = 0, sample_choice = DynamicMetrics.TEST)
 default_tree_metrics.add_tree_metric("treelv1", data_bert_sampler.default_tree_sampler_instance, level = 1, sample_choice = DynamicMetrics.TEST)
 default_tree_metrics.add_tree_metric("treelv2", data_bert_sampler.default_tree_sampler_instance, level = 2, sample_choice = DynamicMetrics.TEST)
@@ -600,9 +603,9 @@ class DefaultTreeStoppingFunc(model_bert_fix.CustomStoppingFunc):
                 self.lowest_test_small_entropy = current_test_small_entropy
                 model.save_weights(self.model_dir + "/best_test_small_entropy.ckpt")
                 self.countdown = 0
-            elif current_test_small_entropy > self.lowest_test_small_entropy * 1.005:
+            elif current_test_small_entropy > self.lowest_test_small_entropy * 1.3:
                 self.countdown += 1
-                if self.countdown > 10:
+                if self.countdown > 50:
                     return True
         else:
             current_test_small_entropy = custom_metrics.get_total_tree_metric()
