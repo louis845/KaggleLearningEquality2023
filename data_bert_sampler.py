@@ -474,3 +474,15 @@ default_sampler_overshoot3_instance = DefaultSampler(sample_generation_functions
                                                      sample_verification_function = data_bert_tree_struct.has_further_correlations)
 
 default_tree_sampler_instance = DefaultTreeSampler()
+
+overshoot_generation = default_tree_sampler_instance.sample_tree_generation_functions.copy()
+overshoot_generation[-1] = {
+                "train_sample": data_bert_tree_struct.obtain_train_sample,
+                "test_sample": data_bert_tree_struct.obtain_test_sample,
+                "train_square_sample": data_bert_tree_struct.obtain_train_square_sample,
+                "test_square_sample": data_bert_tree_struct.obtain_test_square_sample
+            }
+overshoot_veri = default_tree_sampler_instance.sample_tree_verification_functions.copy()
+overshoot_veri[-1] = data_bert_tree_struct.has_close_correlations
+default_tree_overshoot_sampler_instance = DefaultTreeSampler(sample_tree_generation_functions=overshoot_generation, sample_tree_verification_functions=overshoot_veri, sample_tree_abundances_train=data_bert_tree_struct.topic_trees_filtered_abundances_train,
+                                                             sample_tree_abundances_test=data_bert_tree_struct.topic_trees_filtered_abundances_test, generation_sizes=[4, 9, 10, 17, 17])
