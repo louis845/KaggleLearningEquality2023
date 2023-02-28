@@ -246,17 +246,17 @@ class Model(tf.keras.Model):
         self.concat_layer = tf.keras.layers.Concatenate(axis = 2)
 
         # standard stuff
-        self.dropout0 = tf.keras.layers.GaussianNoise(stddev = 0.015)
+        self.dropout0 = tf.keras.layers.GaussianNoise(stddev = 0.05)
         self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense1")
-        self.dropout1 = tf.keras.layers.Dropout(rate=0.3)
+        self.dropout1 = tf.keras.layers.Dropout(rate=0.5)
         self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense2")
-        self.dropout2 = tf.keras.layers.Dropout(rate=0.3)
+        self.dropout2 = tf.keras.layers.Dropout(rate=0.5)
         self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense3")
-        self.dropout3 = tf.keras.layers.Dropout(rate=0.3)
+        self.dropout3 = tf.keras.layers.Dropout(rate=0.5)
         self.dense4 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense4")
-        self.dropout4 = tf.keras.layers.Dropout(rate=0.3)
+        self.dropout4 = tf.keras.layers.Dropout(rate=0.5)
         self.dense5 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense5")
-        self.dropout5 = tf.keras.layers.Dropout(rate=0.3)
+        self.dropout5 = tf.keras.layers.Dropout(rate=0.5)
         self.dense_final = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "dense_final")
 
 
@@ -342,7 +342,6 @@ class Model(tf.keras.Model):
 
             proba = tf.math.add(tf.squeeze(tf.reduce_max(t, axis = 1), axis = 1) * tf.constant(final_tree_level, dtype=tf.float32),
                                 proba * tf.constant(1 - final_tree_level, dtype=tf.float32))
-            print("--------------------------------------------------test--------------------------------------------------")
             return proba
         else: # here we just return the probabilities normally. the probability will be computed as the max inside the set
             return tf.squeeze(tf.reduce_max(t, axis = 1), axis = 1)
