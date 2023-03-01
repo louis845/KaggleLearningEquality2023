@@ -10,7 +10,7 @@ import data_bert_sampler
 
 class Model(tf.keras.Model):
     # only the argument units_size define the shape of the model. the argument training_sampler is used for training only.
-    def __init__(self, units_size=512):
+    def __init__(self, units_size=512, init_noise = 0.05):
         super(Model, self).__init__()
 
         self.training_sampler = None
@@ -20,7 +20,8 @@ class Model(tf.keras.Model):
         self.concat_layer = tf.keras.layers.Concatenate(axis=2, name = "initial_concat")
 
         # standard stuff
-        self.dropout0 = tf.keras.layers.GaussianNoise(stddev=0.015)
+        self.dropout0 = tf.keras.layers.GaussianNoise(stddev=init_noise)
+        self.dropout0_feed = tf.keras.layers.GaussianNoise(stddev=init_noise)
 
         self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense1")
         self.dropout1 = tf.keras.layers.Dropout(rate=0.3)
@@ -85,10 +86,10 @@ class Model(tf.keras.Model):
 
         shape = embedding_result.shape
         if len([1 for k in range(int(shape.rank)) if shape[k] is None]) > 0:
-            first_layer = tf.ragged.map_flat_values(self.dropout0, embedding_result, training=training)
+            first_layer1 = tf.ragged.map_flat_values(self.dropout0, embedding_result, training=training)
         else:
-            first_layer = self.dropout0(embedding_result, training=training)
-        t = self.dropout1(self.dense1(first_layer), training=training)
+            first_layer1 = self.dropout0(embedding_result, training=training)
+        t = self.dropout1(self.dense1(first_layer1), training=training)
         t = self.dropout2(self.dense2(t), training=training)
         t = self.dropout3(self.dense3(t), training=training)
         res_dropout4 = self.dropout4(self.dense4(t), training=training)
@@ -96,9 +97,12 @@ class Model(tf.keras.Model):
         overshoot_fullresult = self.dropoutOvershoot(self.denseOvershoot(res_dropout4), training=training)
         overshoot_result = self.finalOvershoot(overshoot_fullresult)
 
-
+        if len([1 for k in range(int(shape.rank)) if shape[k] is None]) > 0:
+            first_layer2 = tf.ragged.map_flat_values(self.dropout0_feed, embedding_result, training=training)
+        else:
+            first_layer2 = self.dropout0_feed(embedding_result, training=training)
         t = self.dropout1_fp(self.dense1_fp(tf.concat([
-            first_layer,
+            first_layer2,
             overshoot_fullresult
         ], axis=-1)), training=training)
         t = self.dropout2_fp(self.dense2_fp(t), training=training)
