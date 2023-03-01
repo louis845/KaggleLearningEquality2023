@@ -21,6 +21,10 @@ class ObtainProbabilitiesCallback:
     def predict_probabilities(self, unified_topics_contents_vector, device):
         pass
 
+    # same thing as above, except that we return the GPU information directly (and of course use GPU for computation).
+    def predict_probabilities_return_gpu(self, unified_topics_contents_vector):
+        pass
+
     # helper function, do not override.
     def predict_probabilities_with_data(self, topics_id, contents_id, full_topics_vect_data, full_contents_vect_data, device):
         if device == "gpu":
@@ -31,6 +35,13 @@ class ObtainProbabilitiesCallback:
             topics_vector = full_topics_vect_data[topics_id,:]
             contents_vector = full_contents_vect_data[contents_id,:]
             return self.predict_probabilities(np.concatenate([contents_vector, topics_vector], axis = 1), device)
+
+    # helper function, do not override.
+    def predict_probabilities_with_data_return_gpu(self, topics_id, contents_id, full_topics_vect_data,
+                                        full_contents_vect_data):
+        topics_vector = tf.gather(full_topics_vect_data, topics_id, axis=0)
+        contents_vector = tf.gather(full_contents_vect_data, contents_id, axis=0)
+        return self.predict_probabilities_return_gpu(tf.concat([contents_vector, topics_vector], axis=1))
 
 def predict_rows(proba_callback, topic_id_rows, contents_restrict, full_topics_data, full_contents_data, device):
     if device == "gpu":
