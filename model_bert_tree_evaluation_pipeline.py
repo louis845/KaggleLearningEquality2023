@@ -151,10 +151,6 @@ def graph_mask_any(res_mask, topic_tree_mask):
 
     def body(k, mres_mask, mtopic_tree_mask, mmasked_result):
         print("First eager exec: ", k)
-        mmasked_result[k, :].assign(tf.reduce_any(tf.bitwise.bitwise_and(
-            mtopic_tree_mask,
-            mres_mask[k, :]
-        ) != 0, axis=1))
 
         return (k+1, mres_mask, mtopic_tree_mask, tf.concat([mmasked_result,
             tf.expand_dims(tf.reduce_any(tf.bitwise.bitwise_and(
