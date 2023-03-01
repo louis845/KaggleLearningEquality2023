@@ -10,7 +10,7 @@ import data_bert_sampler
 
 class Model(tf.keras.Model):
     # only the argument units_size define the shape of the model. the argument training_sampler is used for training only.
-    def __init__(self, units_size=512, init_noise = 0.05):
+    def __init__(self, units_size=512, init_noise = 0.05, init_noise_overshoot = 0.2):
         super(Model, self).__init__()
 
         self.training_sampler = None
@@ -20,7 +20,7 @@ class Model(tf.keras.Model):
         self.concat_layer = tf.keras.layers.Concatenate(axis=2, name = "initial_concat")
 
         # standard stuff
-        self.dropout0 = tf.keras.layers.GaussianNoise(stddev=init_noise)
+        self.dropout0 = tf.keras.layers.GaussianNoise(stddev=init_noise_overshoot)
         self.dropout0_feed = tf.keras.layers.GaussianNoise(stddev=init_noise)
 
         self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense1")
