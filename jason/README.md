@@ -33,3 +33,7 @@ There are 7 more models in the models folder. Git fetch -> git pull to download 
 * For each 7 new models, include a plot of test_accuracy, test_recall, test_precision, test_entropy, test_overshoot_recall, test_overshoot_precision
 * Among all 10 models, find the one which has the "best" balanced test_precision vs test_recall ratio
     * (which means the epoch where $\text{test\\_precision} \approx \text{test\\_recall}$, and we find the model which has the highest)
+    
+# 2023-03-01 TODO:
+
+There will be a bunch of models to analyze. Add return values to your previously defined function to obtain the optimal epoch, and optimal values for test_recall and test_precision for a model. Call your function for each new model, and find the model which performs the best. Find the corresponding weight_decay and noise.
