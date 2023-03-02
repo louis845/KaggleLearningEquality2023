@@ -58,10 +58,10 @@ def generate_tree_structure_information(topics):
 
     # generate tree structure
     for level in range(np.max(topics["level"].unique())):
-        for str_id in topics.loc[topics["level"] == level + 1].index:
+        for str_id in topics.loc[topics["level"] == (level + 1)].index:
             parent = find_node_by_str_id(total_nodes, topics.loc[str_id, "parent"])
 
-            node = Node(level=0, topic_num_id=topics_inv_map[str_id], topic_str_id=str_id)
+            node = Node(level=(level+1), topic_num_id=topics_inv_map[str_id], topic_str_id=str_id)
             node.parent = parent
             parent.children.append(node)
 
@@ -248,7 +248,6 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
         content_correlations[k] = []
 
     # now we compute the per content topic trees here.
-    ctime = time.time()
     length = len(contents_restrict)
 
     batch_size = init_batch_size
@@ -256,7 +255,7 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
     tlow = 0
     continuous_success = 0
     prev_tlow = 0
-    ctime = 0
+    ctime = time.time()
     while tlow < length:
         thigh = min(tlow + batch_size, length)
         content_ids = contents_restrict[np.arange(tlow, thigh)]
@@ -275,7 +274,7 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
             gc.collect()
 
             probas_np = preorder_probas.numpy()
-            del preorder_probas
+            del preorder_probas, probabilities
             masked_result = np.zeros(shape=(len(data_topics), thigh-tlow), dtype=np.bool)
             for k in range(len(data_topics)):
                 masked_result[k,:] = np.any(probas_np[:, topic_id_to_preorder_id[k]:topic_id_to_subtree_end[k]], axis=1)
@@ -284,7 +283,6 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
                 # masked_result = graph_mask_any(res_mask[k - tlow, :], topic_tree_mask)
                 content_correlations[contents_restrict[k]] = list(np.where(masked_result[:, k-tlow])[0])
             del masked_result
-            del preorder_probas, probabilities
             # if success we update
             tlow = thigh
             continuous_success += 1
