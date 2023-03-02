@@ -118,55 +118,70 @@ def bool_to_int32mask(bool_mask):
     return np.dot(rs, bits_mask).astype(np.int32)
 
 def bool_to_int32mask_tf(bool_mask):
-    rm = bool_mask.shape[1] % 32
-    if rm == 0:
-        padding = 0
-        pad_res = bool_mask
-    else:
-        padding = 32 - rm
-        pad_res = tf.concat([bool_mask, tf.zeros(shape = (bool_mask.shape[0], padding), dtype=bool_mask.dtype)], axis=1)
-    rs = tf.reshape(pad_res, shape=(bool_mask.shape[0], int(math.ceil(bool_mask.shape[1] / 32.0)), 32))
-    del pad_res
+    rm = tf.math.floormod(bool_mask.shape[1], 32)
+    pad_res = tf.concat([bool_mask, tf.zeros(shape = (bool_mask.shape[0], 32 - rm), dtype=bool_mask.dtype)], axis=1)
+    rs = tf.reshape(pad_res, shape=(bool_mask.shape[0], tf.math.floordiv(pad_res.shape[1], 32), 32))
     return tf.linalg.matvec(rs, bits_mask_tf)
 
 def bool_to_int32mask_tf_row(bool_mask):
-    rm = bool_mask.shape[0] % 32
-    if rm == 0:
-        padding = 0
-        pad_res = bool_mask
-    else:
-        padding = 32 - rm
-        pad_res = tf.concat([bool_mask, tf.zeros(shape = (padding), dtype=bool_mask.dtype)], axis=0)
-    rs = tf.reshape(pad_res, shape=(int(math.ceil(bool_mask.shape[0] / 32.0)), 32))
-    del pad_res
+    rm = tf.math.floormod(bool_mask.shape[0], 32)
+    pad_res = tf.concat([bool_mask, tf.zeros(shape = (32 - rm), dtype=bool_mask.dtype)], axis=0)
+    rs = tf.reshape(pad_res, shape=(tf.math.floordiv(pad_res.shape[0], 32), 32))
     return tf.linalg.matvec(rs, bits_mask_tf)
 
 @tf.function
 def graph_mask_any(res_mask, topic_tree_mask):
-    loop_variables = (tf.constant(0), res_mask, topic_tree_mask,
-                      tf.zeros(shape = (0, topic_tree_mask.shape[0]), dtype = tf.bool))
+    return tf.reduce_any(tf.bitwise.bitwise_and(
+                    res_mask,
+                    topic_tree_mask
+                ) != 0, axis=1)
 
-    def condition(k, mres_mask, mtopic_tree_mask, mmasked_result):
-        return k < mres_mask.shape[0]
+@tf.function
+def res_mask_from_probabilities(probabilities, length_contents, length_topics, accept_threshold, preorder_id_to_topics_restrict_id):
+    probabilities = tf.reshape(probabilities, shape=(length_contents, length_topics))
+    pad_probs = tf.concat([probabilities, tf.zeros(shape=(probabilities.shape[0], 1), dtype=probabilities.dtype)],
+                          axis=1)
+    has_cor_places = pad_probs > accept_threshold
+    has_correlation_topics_in_preorder = tf.cast(tf.gather(has_cor_places, preorder_id_to_topics_restrict_id, axis=1),
+                                                 dtype=tf.int32)
 
-    def body(k, mres_mask, mtopic_tree_mask, mmasked_result):
+    return bool_to_int32mask_tf(has_correlation_topics_in_preorder)
+
+@tf.function
+def graph_mask_any_general(res_mask, topic_tree_mask):
+    loop_variables = (tf.constant(0),
+                      tf.TensorArray(tf.bool, size=res_mask.shape[0], dynamic_size=False,
+                                     element_shape=tf.TensorShape([topic_tree_mask.shape[0]]) ))
+
+    def condition(k, mmasked_result):
+        return k < res_mask.shape[0]
+
+    def body(k, mmasked_result):
         print("First eager exec: ", k)
+        return (k+1, mmasked_result.write(k, graph_mask_any(topic_tree_mask, res_mask[k, :])))
 
-        return (k+1, mres_mask, mtopic_tree_mask, tf.concat([mmasked_result,
-            tf.expand_dims(tf.reduce_any(tf.bitwise.bitwise_and(
-                mtopic_tree_mask,
-                mres_mask[k, :]
-            ) != 0, axis=1), axis=0)
-        ], axis=0))
+    return tf.while_loop(condition, body, loop_variables, parallel_iterations=4)[1].stack()
 
-    return tf.while_loop(condition, body, loop_variables, shape_invariants=(
-        loop_variables[0].get_shape(), res_mask.get_shape(), topic_tree_mask.get_shape(),
-        tf.TensorShape([None, topic_tree_mask.shape[0]])
-    ))[3]
+@tf.function
+def obtain_masked_result_directly(probabilities, length_contents, length_topics,
+                                  accept_threshold, preorder_id_to_topics_restrict_id, topic_tree_mask):
+    res_mask = res_mask_from_probabilities(probabilities, length_contents, length_topics, accept_threshold, preorder_id_to_topics_restrict_id)
+    return graph_mask_any_general(res_mask, topic_tree_mask)
 
+@tf.function
+def preorder_correlations_from_probabilities(probabilities, length_contents, length_topics, accept_threshold, preorder_id_to_topics_restrict_id):
+    probabilities = tf.reshape(probabilities, shape=(length_contents, length_topics))
+    pad_probs = tf.concat([probabilities, tf.zeros(shape=(probabilities.shape[0], 1), dtype=probabilities.dtype)],
+                          axis=1)
+    has_cor_places = pad_probs > accept_threshold
+    has_correlation_topics_in_preorder = tf.cast(tf.gather(has_cor_places, preorder_id_to_topics_restrict_id, axis=1),
+                                                 dtype=tf.int32)
+    return has_correlation_topics_in_preorder
+
+@tf.function
 def predict_contents(proba_callback, content_ids, topics_restrict, full_topics_data, full_contents_data):
-    contents_id = tf.repeat(tf.constant(content_ids), len(topics_restrict))
-    topics_id = tf.tile(tf.constant(topics_restrict), [len(content_ids)])
+    contents_id = tf.repeat(content_ids, topics_restrict.shape[0])
+    topics_id = tf.tile(topics_restrict, [content_ids.shape[0]])
 
     probabilities = proba_callback.predict_probabilities_with_data_return_gpu(topics_id, contents_id, full_topics_data,
                                                                    full_contents_data)
@@ -225,29 +240,29 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
         thigh = min(tlow + batch_size, length)
         content_ids = contents_restrict[np.arange(tlow, thigh)]
         try:
-            probabilities = predict_contents(proba_callback, content_ids, topics_restrict, full_topics_data,
+            probabilities = predict_contents(proba_callback, tf.constant(content_ids), tf.constant(topics_restrict), full_topics_data,
                                          full_contents_data)
-            probabilities = tf.reshape(probabilities, shape=((thigh - tlow), len(topics_restrict)))
-            pad_probs = tf.concat([probabilities, tf.zeros(shape=(probabilities.shape[0], 1), dtype=probabilities.dtype)], axis=1)
-            has_cor_places = pad_probs > accept_threshold
-            has_correlation_topics_in_preorder = tf.cast(tf.gather(has_cor_places, preorder_id_to_topics_restrict_id, axis=1), dtype = tf.int32)
 
-            res_mask = bool_to_int32mask_tf(has_correlation_topics_in_preorder)
-            del probabilities, pad_probs, has_cor_places, has_correlation_topics_in_preorder
+            """res_mask = res_mask_from_probabilities(probabilities, thigh-tlow, len(topics_restrict),
+                                                   accept_threshold, preorder_id_to_topics_restrict_id)"""
+            masked_result = obtain_masked_result_directly(probabilities, thigh-tlow, len(topics_restrict),
+                                                   accept_threshold, preorder_id_to_topics_restrict_id,
+                                                          topic_tree_mask)
             """
             content_topic_cors = tf.reduce_any(tf.bitwise.bitwise_and(
                 tf.repeat(tf.expand_dims(res_mask, axis=1), repeats=topic_tree_mask.shape[0], axis=1),
                 tf.repeat(tf.expand_dims(topic_tree_mask, axis=0), repeats=res_mask.shape[0], axis=0)
             ) != 0, axis=2).numpy()"""
         except tf.errors.ResourceExhaustedError as err:
-            res_mask = None
+            masked_result = None
+            # res_mask = None
             # probabilities = None
         # if probabilities is not None:
-        if res_mask is not None:
+        if masked_result is not None:
             gc.collect()
-            masked_result = graph_mask_any(res_mask, topic_tree_mask).numpy()
             for k in range(tlow, thigh):
-                content_correlations[contents_restrict[k]] = list(np.where(masked_result[k-tlow, :])[0])
+                # masked_result = graph_mask_any(res_mask[k - tlow, :], topic_tree_mask)
+                content_correlations[contents_restrict[k]] = list(np.where(masked_result[k-tlow, :].numpy())[0])
 
             """probabilities = (probabilities.reshape((thigh - tlow), len(topics_restrict))) > accept_threshold
             has_topics_bool_mask = np.zeros(shape=len(data_topics), dtype = np.int32)

@@ -19,7 +19,6 @@ Model output:
 A (batch_size) tensor (vector) containing the predicted probabilities. The model tries to predict whether the set of topics contain the
 given content.
 """
-import tensorflow
 import tensorflow as tf
 import numpy as np
 import data_bert
