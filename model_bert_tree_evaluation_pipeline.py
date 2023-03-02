@@ -80,7 +80,9 @@ def generate_tree_structure_information(topics):
     
     return topics_inv_map, topic_id_to_preorder_id, topic_id_to_subtree_end, preorder_id_to_topic_id
 
-def obtain_int32mask(start, end, size):
+# LEGACY CODE, used in previous implementations using GPU
+
+"""def obtain_int32mask(start, end, size):
     mask = np.zeros(shape=int(math.ceil(size / 32.0)), dtype=np.int32)
     mstart = start // 32
     mend = end // 32
@@ -167,6 +169,37 @@ def obtain_masked_result_directly(probabilities, length_contents, length_topics,
                                   accept_threshold, preorder_id_to_topics_restrict_id, topic_tree_mask):
     res_mask = res_mask_from_probabilities(probabilities, length_contents, length_topics, accept_threshold, preorder_id_to_topics_restrict_id)
     return graph_mask_any_general(res_mask, topic_tree_mask)
+@tf.function
+def obtain_masked_result_directly_with_segsum(probabilities, length_contents, length_topics,
+                                  accept_threshold, preorder_id_to_topics_restrict_id, topic_tree_min,
+                                  topic_tree_max, parallel_execs):
+    has_correlation_topics_in_preorder = preorder_correlations_from_probabilities(probabilities, length_contents, length_topics, accept_threshold, preorder_id_to_topics_restrict_id)
+    preorder_length = has_correlation_topics_in_preorder.shape[0]
+    loop_variables = (tf.constant(0),
+                      tf.TensorArray(tf.bool, size=topic_tree_min.shape[0], dynamic_size=False,
+                                     element_shape=tf.TensorShape([length_contents])))
+
+    def condition(k, mmasked_result):
+        return k < topic_tree_min.shape[0]
+
+    def body(k, mmasked_result):
+        print("First eager exec: ", k)
+        rg = tf.range(preorder_length)
+        seg_mask = tf.cast(tf.logical_and(rg >= topic_tree_min[k], rg < topic_tree_max[k]), dtype=tf.int32)
+        agg = tf.math.unsorted_segment_sum(has_correlation_topics_in_preorder, seg_mask, num_segments=2)[1, :]
+        return (k + 1, mmasked_result.write(k,
+            agg > 0
+        ))
+
+    return tf.transpose(
+        tf.while_loop(condition, body, loop_variables,
+                      parallel_iterations=parallel_execs
+        )[1].stack()
+    )
+
+@tf.function
+def fast_multiply_has(mat1, mat2):
+    return tf.linalg.matmul(mat1, mat2) > 0 """
 
 @tf.function
 def preorder_correlations_from_probabilities(probabilities, length_contents, length_topics, accept_threshold, preorder_id_to_topics_restrict_id):
@@ -174,8 +207,7 @@ def preorder_correlations_from_probabilities(probabilities, length_contents, len
     pad_probs = tf.concat([probabilities, tf.zeros(shape=(probabilities.shape[0], 1), dtype=probabilities.dtype)],
                           axis=1)
     has_cor_places = pad_probs > accept_threshold
-    has_correlation_topics_in_preorder = tf.cast(tf.gather(has_cor_places, preorder_id_to_topics_restrict_id, axis=1),
-                                                 dtype=tf.int32)
+    has_correlation_topics_in_preorder = tf.gather(has_cor_places, preorder_id_to_topics_restrict_id, axis=1)
     return has_correlation_topics_in_preorder
 
 @tf.function
@@ -208,17 +240,6 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
     del left_side, right_side
     preorder_id_to_topics_restrict_id = tf.constant(preorder_id_to_topics_restrict_id)
 
-    # per each topic (no matter in topics_restrict or not), we create a mask to represent the subtree starting with
-    # the topic node. this mask would be in bit format, represented by int32 tensor.
-    # the first axis would be the topics axis (in usual topic_num_id), while the second axis is the bitwise axis
-    # in topic_preorder_id. the bit at the (topic_num_id, topic_preorder_id) position will signify whether the
-    # topic represented by topic_num_id is a (non-strict) ancestor or the topic represented by topic_preorder_id.
-    preorder_size = int(math.ceil(len(data_topics) / 32.0))
-    topic_tree_mask = np.zeros(shape = (len(data_topics), preorder_size), dtype = np.int32)
-    for topic_num_id in range(len(data_topics)):
-        topic_tree_mask[topic_num_id, :] = obtain_int32mask(topic_id_to_preorder_id[topic_num_id],
-                                                            topic_id_to_subtree_end[topic_num_id], len(data_topics))
-    topic_tree_mask = tf.constant(topic_tree_mask, dtype = tf.int32)
 
     # the variable used to store the correlations between topic and content.
     # this are the possible topics per content.
@@ -242,41 +263,28 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
         try:
             probabilities = predict_contents(proba_callback, tf.constant(content_ids), tf.constant(topics_restrict), full_topics_data,
                                          full_contents_data)
-
-            """res_mask = res_mask_from_probabilities(probabilities, thigh-tlow, len(topics_restrict),
-                                                   accept_threshold, preorder_id_to_topics_restrict_id)"""
-            masked_result = obtain_masked_result_directly(probabilities, thigh-tlow, len(topics_restrict),
-                                                   accept_threshold, preorder_id_to_topics_restrict_id,
-                                                          topic_tree_mask)
-            """
-            content_topic_cors = tf.reduce_any(tf.bitwise.bitwise_and(
-                tf.repeat(tf.expand_dims(res_mask, axis=1), repeats=topic_tree_mask.shape[0], axis=1),
-                tf.repeat(tf.expand_dims(topic_tree_mask, axis=0), repeats=res_mask.shape[0], axis=0)
-            ) != 0, axis=2).numpy()"""
+            preorder_probas = preorder_correlations_from_probabilities(probabilities, thigh-tlow, len(topics_restrict),
+                                                   accept_threshold, preorder_id_to_topics_restrict_id)
         except tf.errors.ResourceExhaustedError as err:
-            masked_result = None
+            preorder_probas = None
+            # masked_result = None
             # res_mask = None
             # probabilities = None
         # if probabilities is not None:
-        if masked_result is not None:
+        if preorder_probas is not None:
             gc.collect()
+
+            probas_np = preorder_probas.numpy()
+            del preorder_probas
+            masked_result = np.zeros(shape=(len(data_topics), thigh-tlow), dtype=np.bool)
+            for k in range(len(data_topics)):
+                masked_result[k,:] = np.any(probas_np[:, topic_id_to_preorder_id[k]:topic_id_to_subtree_end[k]], axis=1)
+
             for k in range(tlow, thigh):
                 # masked_result = graph_mask_any(res_mask[k - tlow, :], topic_tree_mask)
-                content_correlations[contents_restrict[k]] = list(np.where(masked_result[k-tlow, :].numpy())[0])
-
-            """probabilities = (probabilities.reshape((thigh - tlow), len(topics_restrict))) > accept_threshold
-            has_topics_bool_mask = np.zeros(shape=len(data_topics), dtype = np.int32)
-
-            for k in range(tlow, thigh):
-                has_correlation_topics_in_preorder = topic_id_to_preorder_id[topics_restrict[probabilities[k - tlow, :]]]
-                has_topics_bool_mask[:] = 0
-                has_topics_bool_mask[has_correlation_topics_in_preorder] = 1
-                has_topics_int32_mask = bool_to_int32mask(has_topics_bool_mask)
-                has_topics_int32_mask = tf.repeat(tf.expand_dims(tf.constant(has_topics_int32_mask, dtype = tf.int32),
-                                                                 axis = 0), len(data_topics), axis = 0)
-                masked_result = tf.reduce_any(tf.bitwise.bitwise_and(topic_tree_mask, has_topics_int32_mask) != 0,
-                                        axis = 1)
-                content_correlations[contents_restrict[k]] = list(np.where(masked_result.numpy())[0])"""
+                content_correlations[contents_restrict[k]] = list(np.where(masked_result[:, k-tlow])[0])
+            del masked_result
+            del preorder_probas, probabilities
             # if success we update
             tlow = thigh
             continuous_success += 1
