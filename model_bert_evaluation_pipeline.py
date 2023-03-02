@@ -54,6 +54,14 @@ def predict_rows(proba_callback, topic_id_rows, contents_restrict, full_topics_d
                                                                    full_contents_data, device)
     return probabilities
 
+@tf.function
+def predict_rows_gpu(proba_callback, topic_id_rows, contents_restrict, full_topics_data, full_contents_data, device):
+    topics_id = tf.repeat(tf.constant(topic_id_rows), len(contents_restrict))
+    contents_id = tf.tile(tf.constant(contents_restrict), [len(topic_id_rows)])
+    probabilities = proba_callback.predict_probabilities_with_data_return_gpu(topics_id, contents_id, full_topics_data,
+                                                                   full_contents_data, device)
+    return probabilities
+
 default_topk_values = (np.arange(15) + 1) * 3  # TODO - find optimal topk
 
 def get_topk(x, k):
@@ -74,17 +82,14 @@ def obtain_rowwise_topk(proba_callback, topics_restrict, contents_restrict, full
     for i in range(len(topk_values)):
         topk_preds[topk_values[i]] = np.zeros(shape = (len(topics_restrict), topk_values[i]))
 
-    ctime = time.time()
-
     length = len(topics_restrict)
-    prevlnumber = 0
     max_topk = np.max(topk_values)
 
     batch_size = greedy_multiple_rows
     tlow = 0
     continuous_success = 0
     prev_tlow = 0
-    ctime = 0
+    ctime = time.time()
     while tlow < length:
         thigh = min(tlow + batch_size, length)
         topic_id_rows = topics_restrict[np.arange(tlow, thigh)]
@@ -95,6 +100,60 @@ def obtain_rowwise_topk(proba_callback, topics_restrict, contents_restrict, full
             probabilities = None
         if probabilities is not None:
             probabilities = probabilities.reshape((thigh - tlow), len(contents_restrict))
+            sorted_locs = get_topk(probabilities, max_topk)
+            for i in range(len(topk_values)):
+                topk_preds[topk_values[i]][np.arange(tlow, thigh), :] = contents_restrict[
+                    sorted_locs[:, -topk_values[i]:]]
+            # if success we update
+            tlow = thigh
+            continuous_success += 1
+            if continuous_success == 3:
+                continuous_success = 0
+                batch_size = min(batch_size + 1, max_batch_size)
+
+            if tlow - prev_tlow > 50:
+                ctime = time.time() - ctime
+                print(tlow, "completed. out of:", length, "  batch size:", batch_size, "  time used:", ctime)
+                prev_tlow = tlow
+                ctime = time.time()
+        else:
+            batch_size = max(batch_size - 1, 1)
+            max_batch_size = batch_size
+            continuous_success = 0
+        gc.collect()
+
+    return topk_preds
+
+# topics_restrict, contents_restrict are np arrays containing the restrictions to topics and contents respectively
+# usually this is used to restrict it to test set. topk_values are the topk probas for the model to choose from.
+# by default, it is
+def obtain_rowwise_topk_pgpu(proba_callback, topics_restrict, contents_restrict, full_topics_data, full_contents_data, topk_values = None, greedy_multiple_rows = 40, max_batch_size = 40):
+    if topk_values is None:
+        topk_values = default_topk_values
+
+    # dict of np arrays, where each np array is len(topics_restrict) x topk_values[i], where each row contains the topk predictions
+    topk_preds = {}
+    for i in range(len(topk_values)):
+        topk_preds[topk_values[i]] = np.zeros(shape = (len(topics_restrict), topk_values[i]))
+
+    length = len(topics_restrict)
+    max_topk = np.max(topk_values)
+
+    batch_size = greedy_multiple_rows
+    tlow = 0
+    continuous_success = 0
+    prev_tlow = 0
+    ctime = time.time()
+    while tlow < length:
+        thigh = min(tlow + batch_size, length)
+        topic_id_rows = topics_restrict[np.arange(tlow, thigh)]
+        try:
+            probabilities = predict_rows_gpu(proba_callback, topic_id_rows, contents_restrict, full_topics_data,
+                                         full_contents_data)
+        except tf.errors.ResourceExhaustedError as err:
+            probabilities = None
+        if probabilities is not None:
+            probabilities = probabilities.numpy().reshape((thigh - tlow), len(contents_restrict))
             sorted_locs = get_topk(probabilities, max_topk)
             for i in range(len(topk_values)):
                 topk_preds[topk_values[i]][np.arange(tlow, thigh), :] = contents_restrict[
