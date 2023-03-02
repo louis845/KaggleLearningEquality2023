@@ -282,7 +282,7 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
             for k in range(tlow, thigh):
                 # masked_result = graph_mask_any(res_mask[k - tlow, :], topic_tree_mask)
                 content_correlations[contents_restrict[k]] = list(np.where(masked_result[:, k-tlow])[0])
-            del masked_result
+            del masked_result, probas_np
             # if success we update
             tlow = thigh
             continuous_success += 1
@@ -306,6 +306,6 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
     for k in range(full_topics_data.shape[0]):
         topic_correlations[k] = []
     for k in range(len(contents_restrict)):
-        for top_num_id in contents_restrict[k]:
+        for top_num_id in content_correlations[contents_restrict[k]]:
             topic_correlations[top_num_id].append(contents_restrict[k])
     return content_correlations, topic_correlations
