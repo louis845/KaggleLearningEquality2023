@@ -204,7 +204,7 @@ class Model(tf.keras.Model):
 
             topics, contents, cors, class_ids, tree_levels, multipliers = self.tuple_choice_sampler.obtain_train_sample(
                 int(ratio1 * self.training_sample_size))
-            topics2, contents2, cors2, class_ids2, tree_levels2, multipliers2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
+            topics2, contents2, cors2, class_ids2, tree_levels2, multipliers2 = self.tuple_choice_sampler_overshoot.obtain_train_notree_sample(
                 int(ratio2 * self.training_sample_size))
 
             y0 = np.tile(np.concatenate([cors, cors2]), 2)
@@ -244,7 +244,7 @@ class Model(tf.keras.Model):
 
         topics, contents, cors, class_ids, tree_levels, multipliers = self.tuple_choice_sampler.obtain_train_sample(
             int(ratio1 * self.training_sample_size))
-        topics2, contents2, cors2, class_ids2, tree_levels2, multipliers2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
+        topics2, contents2, cors2, class_ids2, tree_levels2, multipliers2 = self.tuple_choice_sampler_overshoot.obtain_train_notree_sample(
             int(ratio2 * self.training_sample_size))
 
         y0 = np.tile(np.concatenate([cors, cors2]), 2)
@@ -545,11 +545,13 @@ default_tree_metrics.add_tree_metric("treelv2", data_bert_sampler.default_tree_s
 default_tree_metrics.add_tree_metric("treelv3", data_bert_sampler.default_tree_sampler_instance, level = 3, sample_choice = DynamicMetrics.TEST)
 default_tree_metrics.add_tree_metric("treelv4", data_bert_sampler.default_tree_sampler_instance, level = 4, sample_choice = DynamicMetrics.TEST)
 
+"""
 default_tree_metrics.add_tree_metric("treelv0_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 0, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
 default_tree_metrics.add_tree_metric("treelv1_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 1, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
 default_tree_metrics.add_tree_metric("treelv2_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 2, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
 default_tree_metrics.add_tree_metric("treelv3_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 3, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
 default_tree_metrics.add_tree_metric("treelv4_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 4, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
+"""
 
 def obtain_overshoot_metric_instance(training_tuple_sampler, training_tuple_sampler_overshoot):
     overshoot_metrics = DynamicMetrics()
