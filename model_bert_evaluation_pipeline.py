@@ -55,14 +55,14 @@ def predict_rows(proba_callback, topic_id_rows, contents_restrict, full_topics_d
     return probabilities
 
 @tf.function
-def predict_rows_gpu(proba_callback, topic_id_rows, contents_restrict, full_topics_data, full_contents_data, device):
-    topics_id = tf.repeat(tf.constant(topic_id_rows), len(contents_restrict))
-    contents_id = tf.tile(tf.constant(contents_restrict), [len(topic_id_rows)])
+def predict_rows_gpu(proba_callback, topic_id_rows, contents_restrict, full_topics_data, full_contents_data):
+    topics_id = tf.repeat(topic_id_rows, contents_restrict.shape[0])
+    contents_id = tf.tile(contents_restrict, [topic_id_rows.shape[0]])
     probabilities = proba_callback.predict_probabilities_with_data_return_gpu(topics_id, contents_id, full_topics_data,
-                                                                   full_contents_data, device)
+                                                                   full_contents_data)
     return probabilities
 
-default_topk_values = (np.arange(15) + 1) * 3  # TODO - find optimal topk
+default_topk_values = (np.arange(40) + 1) * 3  # TODO - find optimal topk
 
 def get_topk(x, k):
     res = np.argpartition(x, kth = -k, axis = 1)[:, -k:]
@@ -148,7 +148,7 @@ def obtain_rowwise_topk_pgpu(proba_callback, topics_restrict, contents_restrict,
         thigh = min(tlow + batch_size, length)
         topic_id_rows = topics_restrict[np.arange(tlow, thigh)]
         try:
-            probabilities = predict_rows_gpu(proba_callback, topic_id_rows, contents_restrict, full_topics_data,
+            probabilities = predict_rows_gpu(proba_callback, tf.constant(topic_id_rows), tf.constant(contents_restrict), full_topics_data,
                                          full_contents_data)
         except tf.errors.ResourceExhaustedError as err:
             probabilities = None
