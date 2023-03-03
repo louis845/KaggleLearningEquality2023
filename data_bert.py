@@ -72,10 +72,10 @@ test_contents = filter_channel_contents(test_data_channels, learnable_contents)
 test_topics = filter_channel_topics(test_data_channels, learnable_topics)
 
 # reorder train test split into natural order
-train_contents_num_id = np.sort(contents_inv_map[train_contents].to_numpy())
-train_topics_num_id = np.sort(topics_inv_map[train_topics].to_numpy())
-test_contents_num_id = np.sort(contents_inv_map[test_contents].to_numpy())
-test_topics_num_id = np.sort(topics_inv_map[test_topics].to_numpy())
+train_contents_num_id = np.unique(contents_inv_map[train_contents].to_numpy())
+train_topics_num_id = np.unique(topics_inv_map[train_topics].to_numpy())
+test_contents_num_id = np.unique(contents_inv_map[test_contents].to_numpy())
+test_topics_num_id = np.unique(topics_inv_map[test_topics].to_numpy())
 
 train_contents = contents.index[train_contents_num_id]
 train_topics = topics.index[train_topics_num_id]
