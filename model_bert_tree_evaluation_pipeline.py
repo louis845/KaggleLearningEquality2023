@@ -22,11 +22,6 @@ class Node:
     def __str__(self):
         return "Topic: " + self.topic_str_id + "   " + self.topic_num_id
 
-    def __del__(self):
-        for child in self.children:
-            del child
-        del self.children
-
 def find_node_by_str_id(total_nodes, str_id):
     for node in total_nodes:
         if node.topic_str_id == str_id:
@@ -81,13 +76,7 @@ def generate_tree_structure_information(topics):
         for k in range(len(node.children)):
             node.children[k] = None
         del node.children
-    for k in range(len(topic_trees)):
-        topic_trees[k] = None
-    del topic_trees
-    for k in range(len(total_nodes)):
-        del total_nodes[k]
-        total_nodes[k] = None
-    del total_nodes
+    del total_nodes, topic_trees
     gc.collect()
     
     return topics_inv_map, topic_id_to_preorder_id, topic_id_to_subtree_end, preorder_id_to_topic_id
