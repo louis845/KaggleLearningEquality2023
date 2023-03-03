@@ -53,7 +53,7 @@ def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func =
     checkpoint_file = modeldir + "/{epoch:07d}.ckpt"
     logging_file = modeldir + "/logfile.csv"
 
-    training_sampler = model_bert_fix.TrainingSampler(embedded_vectors_folder = config.resources_path + "sbert_vectors/mininet384/",
+    training_sampler = model_bert_fix.TrainingSampler(embedded_vectors_folder = config.resources_path + "sbert_vectors/mininet_L12_english384/",
                                    contents_one_hot_file = config.resources_path + "one_hot_languages/contents_lang_train.npy",
                                    topics_one_hot_file = config.resources_path + "one_hot_languages/topics_lang_train.npy", device = "cpu")
     print("postsampler")
@@ -111,15 +111,7 @@ tuple_choice_sampler = data_bert_sampler.MixedSampler(sampler_list = [data_bert_
 metrics = model_bert_fix.obtain_overshoot_metric_instance(tuple_choice_sampler)
 train_model("overshoot23", custom_metrics = metrics, custom_tuple_choice_sampler =  tuple_choice_sampler)"""
 
-weight_decay = int(sys.argv[1])
-init_noise = float(sys.argv[2])
-
-for weight_decay in range(1,11):
-    for init_noise in np.arange(0.05,2,0.05):
-        train_model("direct_model_mininet_vectors_noise_" + str(init_noise) + "_decay_" + str(weight_decay*0.01), init_noise=init_noise, weight_decay=(weight_decay*0.01))
-        gc.collect()
-        train_model_stepup("direct_model_stepup_mininet_vectors" + str(init_noise) + "_decay_" + str(weight_decay*0.0005), weight_decay=(weight_decay*0.0005))
-        gc.collect()
+train_model_stepup("minilm12_eng_model_stepup")
 
 """tuple_choice_sampler = data_bert_sampler.default_sampler_instance
 tuple_choice_sampler_overshoot = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance])
