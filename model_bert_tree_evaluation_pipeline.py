@@ -8,6 +8,7 @@ import time
 import math
 import gc
 import tensorflow as tf
+import os
 
 class Node:
     def __init__(self, level, topic_num_id, topic_str_id):
@@ -75,7 +76,18 @@ def generate_tree_structure_information(topics):
     for node in topic_trees:
         cur_id = compute_preorder_id(node, cur_id, topic_id_to_preorder_id, preorder_id_to_topic_id, topic_id_to_subtree_end) + 1
 
-    del total_nodes, topic_trees
+    for node in total_nodes:
+        node.parent = None
+        for k in range(len(node.children)):
+            node.children[k] = None
+        del node.children
+    for k in range(len(topic_trees)):
+        topic_trees[k] = None
+    del topic_trees
+    for k in range(len(total_nodes)):
+        del total_nodes[k]
+        total_nodes[k] = None
+    del total_nodes
     gc.collect()
     
     return topics_inv_map, topic_id_to_preorder_id, topic_id_to_subtree_end, preorder_id_to_topic_id
@@ -223,7 +235,8 @@ def predict_contents(proba_callback, content_ids, topics_restrict, full_topics_d
 # belong to.
 def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restrict, contents_restrict,
                                       full_topics_data, full_contents_data, accept_threshold = 0.6,
-                                      init_batch_size = 10, init_max_batch_size = 30):
+                                      init_batch_size = 10, init_max_batch_size = 30,
+                                      out_contents_folder="contents_tree/", out_topics_folder="topics_tree/"):
     topics_restrict = np.sort(topics_restrict)
     contents_restrict = np.sort(contents_restrict)
     topics_inv_map, topic_id_to_preorder_id, topic_id_to_subtree_end, preorder_id_to_topic_id = generate_tree_structure_information(
@@ -240,12 +253,10 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
     del left_side, right_side
     preorder_id_to_topics_restrict_id = tf.constant(preorder_id_to_topics_restrict_id)
 
-
-    # the variable used to store the correlations between topic and content.
-    # this are the possible topics per content.
-    content_correlations = np.empty(shape = (full_contents_data.shape[0]), dtype = "object")
-    for k in range(full_contents_data.shape[0]):
-        content_correlations[k] = []
+    if not os.path.isdir(out_contents_folder):
+        os.mkdir(out_contents_folder)
+    if not os.path.isdir(out_topics_folder):
+        os.mkdir(out_topics_folder)
 
     # now we compute the per content topic trees here.
     length = len(contents_restrict)
@@ -256,23 +267,21 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
     continuous_success = 0
     prev_tlow = 0
     ctime = time.time()
+    ctime2 = time.time()
     while tlow < length:
         thigh = min(tlow + batch_size, length)
         content_ids = contents_restrict[np.arange(tlow, thigh)]
+        probabilities = None
         try:
             probabilities = predict_contents(proba_callback, tf.constant(content_ids), tf.constant(topics_restrict), full_topics_data,
                                          full_contents_data)
             preorder_probas = preorder_correlations_from_probabilities(probabilities, thigh-tlow, len(topics_restrict),
                                                    accept_threshold, preorder_id_to_topics_restrict_id)
         except tf.errors.ResourceExhaustedError as err:
+            if probabilities is not None:
+                del probabilities
             preorder_probas = None
-            # masked_result = None
-            # res_mask = None
-            # probabilities = None
-        # if probabilities is not None:
         if preorder_probas is not None:
-            gc.collect()
-
             probas_np = preorder_probas.numpy()
             del preorder_probas, probabilities
             masked_result = np.zeros(shape=(len(data_topics), thigh-tlow), dtype=np.bool)
@@ -281,8 +290,10 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
 
             for k in range(tlow, thigh):
                 # masked_result = graph_mask_any(res_mask[k - tlow, :], topic_tree_mask)
-                content_correlations[contents_restrict[k]] = list(np.where(masked_result[:, k-tlow])[0])
+                np.save(out_contents_folder+str(contents_restrict[k])+".npy", np.where(masked_result[:, k-tlow])[0].astype(dtype=np.int32))
             del masked_result, probas_np
+
+            gc.collect()
             # if success we update
             tlow = thigh
             continuous_success += 1
@@ -301,11 +312,29 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
             continuous_success = 0
         gc.collect()
 
+    del topics_inv_map, topic_id_to_preorder_id, topic_id_to_subtree_end, preorder_id_to_topic_id
+
+    ctime2 = time.time() - ctime2
+    print("Finished generating contents-topics correlations! Time: ", ctime2)
+
+    ctime2 = time.time()
+    ctime = time.time()
     # create this by topic.
-    topic_correlations = np.empty(shape = (full_topics_data.shape[0]), dtype = "object")
-    for k in range(full_topics_data.shape[0]):
-        topic_correlations[k] = []
     for k in range(len(contents_restrict)):
-        for top_num_id in content_correlations[contents_restrict[k]]:
-            topic_correlations[top_num_id].append(contents_restrict[k])
-    return content_correlations, topic_correlations
+        content_num_id = contents_restrict[k]
+        cors = np.load(out_contents_folder + str(content_num_id) + ".npy")
+        for top_num_id in cors:
+            fl = out_topics_folder + str(top_num_id) + ".npy"
+            if not os.path.isfile(fl):
+                np.save(fl, np.array([contents_restrict[k]], dtype=np.int32))
+            else:
+                arcors = np.load(fl)
+                np.save(fl, np.concatenate([
+                    arcors,
+                    np.array([contents_restrict[k]], dtype=np.int32)
+                ]))
+        if k % 500 == 0:
+            ctime = time.time() - ctime
+            print("Updated contents "+str(k)+" out of "+str(len(contents_restrict))+"   Time: "+str(ctime))
+    ctime2 = time.time() - ctime2
+    print("Finished generating topics-contents correlations! Time: ", ctime2)
