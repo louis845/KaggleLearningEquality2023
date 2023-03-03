@@ -360,10 +360,65 @@ def add_content_to_topic(content_num_id, topic_num_id, out_topics_folder,
     buffer_contents[op_idx].append(content_num_id)
     buffer_last_access[op_idx] = access_no"""
 
-def generate_pivot_correlations(contents_restrict, out_contents_folder, out_topics_folder, total_num_topics, buf_size=5000):
+def generate_pivot_correlations(contents_restrict, out_contents_folder, out_topics_folder, total_num_topics,
+                                buf_size=5000, chunk_size=134217728):
     if not os.path.exists(out_topics_folder):
         os.mkdir(out_topics_folder)
 
+    #chunk = np.zeros(shape=(2, chunk_size), dtype=np.int32) # [0,:] is topics, [1,:] is contents
+    chunk_topics = np.zeros(shape=chunk_size, dtype=np.int32)
+    chunk_contents = np.zeros(shape=chunk_size, dtype=np.int32)
+    num_chunks = 0
+
+    chunk_start = 0 # max chunk idx is chunk_size
+    # chunk[:, :] = -1
+    chunk_topics[:] = -1
+    chunk_contents[:] = -1
+
+    ctime = time.time()
+    for k in range(len(contents_restrict)):
+        content_num_id = contents_restrict[k]
+        cors = np.load(out_contents_folder + str(content_num_id) + ".npy")
+        
+        cstart = 0
+        while cstart < len(cors):
+            clength = min(chunk_size-chunk_start, len(cors)-cstart)
+            cend = cstart + clength
+            chunk_end = chunk_start + clength
+            chunk_topics[chunk_start:chunk_end] = cors[cstart:cend]
+            chunk_contents[chunk_start:chunk_end] = content_num_id
+
+            cstart = cend
+            chunk_start = chunk_end
+
+            if chunk_end == chunk_size:
+                sort_order = np.argsort(chunk_topics[:])
+                chunk_topics = chunk_topics[sort_order] # sort according to topics.
+                chunk_contents = chunk_contents[sort_order]  # sort according to topics.
+                np.save("tmp_chunk" + str(num_chunks)+"_topics.npy", chunk_topics)
+                np.save("tmp_chunk" + str(num_chunks) + "_contents.npy", chunk_contents)
+                chunk_start = 0
+                num_chunks += 1
+                chunk_topics[:] = -1
+                chunk_contents[:] = -1
+
+        if k % 1000 == 0:
+            gc.collect()
+            ctime = time.time() - ctime
+            print("Saved contents: ", k, " out of ", len(contents_restrict), "into chunks. Time:", ctime)
+            ctime = time.time()
+
+    if (chunk_topics != -1).sum() > 0:
+        sort_order = np.argsort(chunk_topics[:])
+        chunk_topics = chunk_topics[sort_order]  # sort according to topics.
+        chunk_contents = chunk_contents[sort_order]  # sort according to topics.
+        np.save("tmp_chunk" + str(num_chunks) + "_topics.npy", chunk_topics)
+        np.save("tmp_chunk" + str(num_chunks) + "_contents.npy", chunk_contents)
+        num_chunks += 1
+
+    gchunk_topics = chunk_topics
+    gchunk_contents = chunk_contents
+    del chunk_start
 
     topics_list = np.empty(shape = buf_size, dtype="object")
     for k in range(buf_size):
@@ -374,23 +429,34 @@ def generate_pivot_correlations(contents_restrict, out_contents_folder, out_topi
         start = j * buf_size
         end = (j+1) * buf_size
 
-        for k in range(len(contents_restrict)):
-            content_num_id = contents_restrict[k]
-            cors = np.load(out_contents_folder + str(content_num_id) + ".npy")
-            for top_num_id in cors:
-                if start <= top_num_id and top_num_id < end:
-                    topics_list[top_num_id - start].append(content_num_id)
-            del cors
-            if k % 1000 == 0:
+        if num_chunks > 1:
+            for k in range(num_chunks):
+                del gchunk_topics, gchunk_contents
+                gchunk_topics = np.load("tmp_chunk" + str(k) + "_topics.npy")
+                gchunk_contents = np.load("tmp_chunk" + str(k) + "_contents.npy")
+
+                for top_num_id in range(start, end):
+                    lft = np.searchsorted(gchunk_topics, top_num_id, side="left")
+                    rgt = np.searchsorted(gchunk_topics, top_num_id, side="right")
+                    if rgt > lft:
+                        topics_list[top_num_id - start].extend(list(gchunk_contents[lft:rgt]))
                 gc.collect()
+        else:
+            for top_num_id in range(start, end):
+                lft = np.searchsorted(gchunk_topics, top_num_id, side="left")
+                rgt = np.searchsorted(gchunk_topics, top_num_id, side="right")
+                if rgt > lft:
+                    topics_list[top_num_id - start].extend(list(gchunk_contents[lft:rgt]))
 
         for top_num_id in range(start, end):
             if len(topics_list[top_num_id - start]) > 0:
                 fl = out_topics_folder + str(top_num_id) + ".npy"
-                np.save(fl, np.array(topics_list[top_num_id - start], dtype=np.int32))
+                np.save(fl, np.sort(np.array(topics_list[top_num_id - start], dtype=np.int32)))
                 topics_list[top_num_id - start].clear()
+
         gc.collect()
 
         ctime = time.time() - ctime
         print("Saved batch: ", j, " out of ", int(math.ceil((0.0+total_num_topics) / buf_size)), " Time:", ctime)
 
+    del gchunk_topics, gchunk_contents
