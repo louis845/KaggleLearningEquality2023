@@ -381,7 +381,7 @@ def generate_pivot_correlations(contents_restrict, out_contents_folder, out_topi
                 if start <= top_num_id and top_num_id < end:
                     topics_list[top_num_id - start].append(content_num_id)
             del cors
-            if k % 0 == 1000:
+            if k % 1000 == 0:
                 gc.collect()
 
         for top_num_id in range(start, end):
