@@ -307,23 +307,89 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
     print("Finished generating contents-topics correlations! Time: ", ctime2)
 
     ctime2 = time.time()
+    generate_pivot_correlations(contents_restrict, out_contents_folder, out_topics_folder)
+    ctime2 = time.time() - ctime2
+    print("Finished generating topics-contents correlations! Time: ", ctime2)
+
+def find_empty(buffer_ids):
+    empty_places = np.where(buffer_ids == -1)[0]
+    if len(empty_places) == 0:
+        return -1
+    return empty_places[0]
+
+def free_old_buffers(buffer_ids, buffer_last_access, buffer_contents, out_topics_folder, bottomk = 50):
+    smallest_last_access = np.argpartition(buffer_last_access, kth=bottomk, axis=0)[:bottomk]
+    buffer_last_access[smallest_last_access] = np.max(buffer_last_access)
+    for k in range(len(smallest_last_access)):
+        buffer_pos = smallest_last_access[k]
+        lst = buffer_contents[buffer_pos]
+        buffer_contents[buffer_pos] = None
+
+        topic_num_id = buffer_ids[buffer_pos]
+        fl = out_topics_folder + str(topic_num_id) + ".npy"
+        np.save(fl, np.array(lst, dtype=np.int32))
+        del lst
+
+    buffer_ids[smallest_last_access] = -1
+    gc.collect()
+
+def load_buffer(buffer_ids, buffer_contents, empty_idx, topic_num_id, out_topics_folder):
+    buffer_ids[empty_idx] = topic_num_id
+    fl = out_topics_folder + str(topic_num_id) + ".npy"
+    if os.path.isfile(fl):
+        buffer_contents[empty_idx] = list(np.load(fl))
+    else:
+        buffer_contents[empty_idx] = []
+
+def add_content_to_topic(content_num_id, topic_num_id, out_topics_folder,
+                         buffer_ids, buffer_last_access, buffer_contents, access_no, bottomk = 50):
+    op_idx = np.where(buffer_ids == topic_num_id)[0]
+
+    if len(op_idx) == 0:
+        empty_idx = find_empty(buffer_ids)
+        if empty_idx == -1:
+            free_old_buffers(buffer_ids, buffer_last_access, buffer_contents, out_topics_folder, bottomk = bottomk)
+            empty_idx = find_empty(buffer_ids)
+
+        load_buffer(buffer_ids, buffer_contents, empty_idx, topic_num_id, out_topics_folder)
+        op_idx = empty_idx
+    else:
+        op_idx = op_idx[0]
+
+    buffer_contents[op_idx].append(content_num_id)
+    buffer_last_access[op_idx] = access_no
+
+def generate_pivot_correlations(contents_restrict, out_contents_folder, out_topics_folder, buf_size=3000):
+    if not os.path.exists(out_topics_folder):
+        os.mkdir(out_topics_folder)
+    buffer_ids = np.zeros(shape=(buf_size), dtype=np.int32)
+    buffer_last_access = np.zeros(shape=(buf_size), dtype=np.int32)
+    buffer_contents = np.empty(shape=(buf_size), dtype="object")
+
+    buffer_ids[:] = -1
+
     ctime = time.time()
-    # create this by topic.
+
+    cur_access = 0
     for k in range(len(contents_restrict)):
         content_num_id = contents_restrict[k]
         cors = np.load(out_contents_folder + str(content_num_id) + ".npy")
         for top_num_id in cors:
-            fl = out_topics_folder + str(top_num_id) + ".npy"
-            if not os.path.isfile(fl):
-                np.save(fl, np.array([contents_restrict[k]], dtype=np.int32))
-            else:
-                arcors = np.load(fl)
-                np.save(fl, np.concatenate([
-                    arcors,
-                    np.array([contents_restrict[k]], dtype=np.int32)
-                ]))
+            add_content_to_topic(content_num_id, top_num_id, out_topics_folder, buffer_ids, buffer_last_access,
+                                 buffer_contents, cur_access)
+            cur_access += 1
         if k % 500 == 0:
             ctime = time.time() - ctime
-            print("Updated contents "+str(k)+" out of "+str(len(contents_restrict))+"   Time: "+str(ctime))
-    ctime2 = time.time() - ctime2
-    print("Finished generating topics-contents correlations! Time: ", ctime2)
+            print("Updated contents " + str(k) + " out of " + str(len(contents_restrict)) + "   Time: " + str(ctime))
+            ctime = time.time()
+
+    persistent_buffers = np.where(buffer_ids != -1)[0]
+    for k in range(len(persistent_buffers)):
+        buf_id = persistent_buffers[k]
+        topic_num_id = buffer_ids[buf_id]
+        fl = out_topics_folder + str(topic_num_id) + ".npy"
+        np.save(fl, np.array(buffer_contents[buf_id], dtype=np.int32))
+
+    del buffer_ids, buffer_last_access, buffer_contents
+    gc.collect()
+

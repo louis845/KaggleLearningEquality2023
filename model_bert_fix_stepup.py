@@ -219,7 +219,7 @@ class Model(tf.keras.Model):
             final_tree_level = np.tile((tree_levels == 5).astype(dtype=np.float32), 2)
 
             multipliers_tf = tf.constant(np.tile(
-                np.concatenate([multipliers, multipliers2 * 4], axis=0),
+                np.concatenate([multipliers, multipliers2 * 10], axis=0),
                 2), dtype=tf.float32)
 
             with tf.GradientTape() as tape:
@@ -259,7 +259,7 @@ class Model(tf.keras.Model):
         final_tree_level = np.tile((tree_levels == 5).astype(dtype=np.float32), 2)
 
         multipliers_tf = tf.constant(np.tile(
-            np.concatenate([multipliers, multipliers2 * 4], axis=0),
+            np.concatenate([multipliers, multipliers2 * 10], axis=0),
             2), dtype=tf.float32)
 
         y_pred = self(input_data, training=True, actual_y=y0, final_tree_level=final_tree_level)
