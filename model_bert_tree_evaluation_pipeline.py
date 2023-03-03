@@ -244,8 +244,6 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
 
     if not os.path.isdir(out_contents_folder):
         os.mkdir(out_contents_folder)
-    if not os.path.isdir(out_topics_folder):
-        os.mkdir(out_topics_folder)
 
     # now we compute the per content topic trees here.
     length = len(contents_restrict)
@@ -307,10 +305,13 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
     print("Finished generating contents-topics correlations! Time: ", ctime2)
 
     ctime2 = time.time()
-    generate_pivot_correlations(contents_restrict, out_contents_folder, out_topics_folder)
+    if out_topics_folder is not None:
+        generate_pivot_correlations(contents_restrict, out_contents_folder, out_topics_folder, len(data_topics))
     ctime2 = time.time() - ctime2
     print("Finished generating topics-contents correlations! Time: ", ctime2)
 
+# LEGACY buffer based method.
+"""
 def find_empty(buffer_ids):
     empty_places = np.where(buffer_ids == -1)[0]
     if len(empty_places) == 0:
@@ -357,39 +358,39 @@ def add_content_to_topic(content_num_id, topic_num_id, out_topics_folder,
         op_idx = op_idx[0]
 
     buffer_contents[op_idx].append(content_num_id)
-    buffer_last_access[op_idx] = access_no
+    buffer_last_access[op_idx] = access_no"""
 
-def generate_pivot_correlations(contents_restrict, out_contents_folder, out_topics_folder, buf_size=3000):
+def generate_pivot_correlations(contents_restrict, out_contents_folder, out_topics_folder, total_num_topics, buf_size=5000):
     if not os.path.exists(out_topics_folder):
         os.mkdir(out_topics_folder)
-    buffer_ids = np.zeros(shape=(buf_size), dtype=np.int32)
-    buffer_last_access = np.zeros(shape=(buf_size), dtype=np.int32)
-    buffer_contents = np.empty(shape=(buf_size), dtype="object")
 
-    buffer_ids[:] = -1
 
-    ctime = time.time()
+    topics_list = np.empty(shape = buf_size, dtype="object")
+    for k in range(buf_size):
+        topics_list[k] = []
 
-    cur_access = 0
-    for k in range(len(contents_restrict)):
-        content_num_id = contents_restrict[k]
-        cors = np.load(out_contents_folder + str(content_num_id) + ".npy")
-        for top_num_id in cors:
-            add_content_to_topic(content_num_id, top_num_id, out_topics_folder, buffer_ids, buffer_last_access,
-                                 buffer_contents, cur_access)
-            cur_access += 1
-        if k % 500 == 0:
-            ctime = time.time() - ctime
-            print("Updated contents " + str(k) + " out of " + str(len(contents_restrict)) + "   Time: " + str(ctime))
-            ctime = time.time()
+    for j in range(int(math.ceil((0.0+total_num_topics) / buf_size))):
+        ctime = time.time()
+        start = j * buf_size
+        end = (j+1) * buf_size
 
-    persistent_buffers = np.where(buffer_ids != -1)[0]
-    for k in range(len(persistent_buffers)):
-        buf_id = persistent_buffers[k]
-        topic_num_id = buffer_ids[buf_id]
-        fl = out_topics_folder + str(topic_num_id) + ".npy"
-        np.save(fl, np.array(buffer_contents[buf_id], dtype=np.int32))
+        for k in range(len(contents_restrict)):
+            content_num_id = contents_restrict[k]
+            cors = np.load(out_contents_folder + str(content_num_id) + ".npy")
+            for top_num_id in cors:
+                if start <= top_num_id and top_num_id < end:
+                    topics_list[top_num_id - start].append(content_num_id)
+            del cors
+            if k % 0 == 1000:
+                gc.collect()
 
-    del buffer_ids, buffer_last_access, buffer_contents
-    gc.collect()
+        for top_num_id in range(start, end):
+            if len(topics_list[top_num_id - start]) > 0:
+                fl = out_topics_folder + str(top_num_id) + ".npy"
+                np.save(fl, np.array(topics_list[top_num_id - start], dtype=np.int32))
+                topics_list[top_num_id - start].clear()
+        gc.collect()
+
+        ctime = time.time() - ctime
+        print("Saved batch: ", j, " out of ", int(math.ceil((0.0+total_num_topics) / buf_size)), " Time:", ctime)
 
