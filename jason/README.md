@@ -37,3 +37,18 @@ There are 7 more models in the models folder. Git fetch -> git pull to download 
 # 2023-03-01 TODO:
 
 There will be a bunch of models to analyze. Add return values to your previously defined function to obtain the optimal epoch, and optimal values for test_recall and test_precision for a model. Call your function for each new model, and find the model which performs the best. Find the corresponding weight_decay and noise.
+
+# 2023-03-04 TODO:
+There are some predicted data for you to compare with the real data. Help compute the following metrics:
+$$\text{True positive} = \text{Predicted to be true and correct (actually true)}$$
+$$\text{False positive} = \text{Predicted to be true and wrong (actually false)}$$
+$$\text{True negative} = \text{Predicted to be false and correct (actually false)}$$
+$$\text{False negative} = \text{Predicted to be false and wrong (actually true)}$$
+$$\text{Precision} = \text{\text{True positive}}{\text{True positive} + \text{False positive}}$$
+$$\text{Recall} = \text{\text{True positive}}{\text{True positive} + \text{False negative}}$$
+$$F_2 = 5 \cdot \frac{\text{Precision} \cdot \text{Recall}}{4 \cdot \text{Precision} + \text{Recall}}$$
+Apart from computing these for the whole set, we compute the rowwise versions also. This means
+$$\text{Precision}_r = \frac{1}{|\text{rows}|}\sum_{\text{row} \in \text{rows}} \text{\text{True positive}_\text{row}}{\text{True positive}_\text{row} + \text{False positive}_\text{row}}$$
+and so on....
+
+Also, compute the correlations **with respect to tree structure**, such that there exist a *tree correlation* between $(T,C)$ if and only if there exists a subnode $T'$ of $T$ such that $(T',C)$ is a *usual correlation*. Compute the above scores with respect to these correlations.
