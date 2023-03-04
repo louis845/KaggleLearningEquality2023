@@ -85,4 +85,34 @@ $$
 
 and so on....
 
-Also, compute the correlations **with respect to tree structure**, such that there exist a *tree correlation* between $(T,C)$ if and only if there exists a subnode $T'$ of $T$ such that $(T',C)$ is a *usual correlation*. Compute the above scores with respect to these correlations.
+### Requirements2:
+It is quite important to see whether the model does well on some kinds of data but not so well on other kinds of data. Remember we can compute the metrics for each topic:
+$$
+\begin{align*}
+\text{Precision}(topic) &= \frac{\text{True positive}(topic)}{\text{True positive}(topic) + \text{False positive}(topic)}   \\
+\text{Recall}(topic) &= \frac{\text{True positive}(topic)}{\text{True positive}(topic) + \text{False negative}(topic)}   \\
+F_2(topic) &= 5 \cdot \frac{\text{Precision}(topic) \cdot \text{Recall}(topic)}{4 \cdot \text{Precision}(topic) + \text{Recall}(topic)}
+\end{align*}
+$$
+
+This means there is a $\text{Precision}, \text{Recall}, F_2$ for each topic (you should have done that above). Notice that in the ../data/topics_translate.csv file, there is a language column and channel column. See if the above three scores depend on the language, or channel. Also, the topics form a tree structure. Each topic contains a certain amount of subtopics (subnode) in the tree (see tree_structure_visualization.py). This means
+$$\text{Tree size}(\text{topic}) = \text{Number of subtopics (including itself) in the subtree starting with topic}$$
+and obviously $\text{Tree size}(\text{topic}) \geq 1$. 
+
+Compute the following averages:
+$$
+\begin{align*}
+\text{Precision}(\text{lang}) &= \frac{1}{|\text{lang}|}\sum_{\text{topic} \in \text{lang}}\frac{\text{True positive}(topic)}{\text{True positive}(topic) + \text{False positive}(topic)}   \\
+\text{Precision}(\text{channel}) &= \frac{1}{|\text{channel}|}\sum_{\text{topic} \in \text{channel}} \frac{\text{True positive}(topic)}{\text{True positive}(topic) + \text{False positive}(topic)} \\
+\text{Precision}(\text{size}) &= \frac{1}{|\{\text{Tree size}(\text{topic}) = \text{size}\}|}\sum_{\text{Tree size}(\text{topic}) = \text{size}} \frac{\text{True positive}(topic)}{\text{True positive}(topic) + \text{False positive}(topic)} \\
+\phantom{eeeee}\vdots & \phantom{ee}(\text{for Recall and }F_2)
+\end{align*}
+$$
+
+and try to see if there is a difference. 
+
+
+Also, compute the correlations **with respect to tree structure**, such that there exist a *tree correlation* between $(T,C)$ if and only if there exists a subnode $T'$ of $T$ such that $(T',C)$ is a *usual correlation*. Compute all the above scores in **Requirements + Requirements2** with respect to these correlations.
+
+### Requirements3 (extra):
+Notice that you computed the averages of scores for each language and channel. Use the hypothesis testing methods you've learnt before (e.g multiple linear regression) to see if the difference in classes are statistically significant. Of course you wouldn't use calculators and input them by hand like the exams. There is a statsmodel python package for doing these things, you can look it up and implement them.
