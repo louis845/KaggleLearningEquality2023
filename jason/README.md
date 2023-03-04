@@ -56,7 +56,7 @@ $$
 Apart from computing these for the whole set, we compute the rowwise versions also. This means
 
 $$
-\text{Precision}_{r} = \frac{1}{|\text{rows}|}\sum_{\text{row} \in \text{rows}} \text{\text{True positive}_\text{row}}{\text{True positive}_\text{row} + \text{False positive}_\text{row}}
+\text{Precision}_{r} = \frac{1}{|\text{rows}|}\sum_{\text{row} \in \text{rows}} \frac{\text{True positive}_\text{row}}{\text{True positive}_\text{row} + \text{False positive}_\text{row}}
 $$
 
 and so on....
