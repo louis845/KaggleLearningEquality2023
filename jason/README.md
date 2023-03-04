@@ -39,7 +39,28 @@ There are 7 more models in the models folder. Git fetch -> git pull to download 
 There will be a bunch of models to analyze. Add return values to your previously defined function to obtain the optimal epoch, and optimal values for test_recall and test_precision for a model. Call your function for each new model, and find the model which performs the best. Find the corresponding weight_decay and noise.
 
 # 2023-03-04 TODO:
-There are some predicted data for you to compare with the real data. Help compute the following metrics:
+There are some predicted data for you to compare with the real data. The real data is in 
+
+    ../data/contents_translate.csv
+    ../data/topics_translate.csv
+    ../data/correlations.csv
+
+You should extract the predicted data into the jason folder (topics_tree_train.zip, topics_tree_test.zip). These are the predicted correlations by the model. The *actual* correlations are stored in correlations.csv, and the *predicted* correlations are stored in the zip files. 
+
+### correlations.csv format
+This file is given by the competition, containing the information of the *actual* contents that each topic contains. This file is stored in csv format, so we should use pandas (pd) to read from it. The topic id and content id are stored in **string** id format, e.g. t_xxxxxxxxx for topic, c_xxxxxxxxx for content. 
+
+### predicted from model format
+This zip file contains a bunch of .npy files. Each .npy file starts with an integer, and the integer corresponds to the topic in **int** id format. For each .npy file, you can use
+
+    np.load(<file>)
+    
+to load the integer array into Python. The array contains all the predicted contents from the model (in **int** id) belonging to the topic. You *should* find a way to convert from **string** id to **int** id to compare the *true* correlations vs *predicted* correlations. Hint: load contents_translate.csv using pandas and use .index.
+
+If you forget what the tree structure means, you can run tree_structure_visualization.py
+
+### Requirements:
+Help compute the following metrics:
 
 $$
 \begin{gather*}
@@ -53,10 +74,13 @@ F_2 = 5 \cdot \frac{\text{Precision} \cdot \text{Recall}}{4 \cdot \text{Precisio
 \end{gather*}
 $$
 
-Apart from computing these for the whole set, we compute the rowwise versions also. This means
+Apart from computing these for the whole set, we compute the rowwise (topic-wise) versions also. This means
 
 $$
-\text{Precision}_{r} = \frac{1}{|\text{rows}|}\sum_{\text{row} \in \text{rows}} \frac{\text{True positive}_\text{row}}{\text{True positive}_\text{row} + \text{False positive}_\text{row}}
+\begin{align*}
+\text{Precision}_{r} &= \frac{1}{|\text{rows}|}\sum_{\text{row} \in \text{rows}} \frac{\text{True positive}_\text{row}}{\text{True positive}_\text{row} + \text{False positive}_\text{row}} \\
+&= \frac{1}{|\text{topics}|}\sum_{\text{topic} \in \text{topics}} \frac{\text{True positive}_\text{topic}}{\text{True positive}_\text{topic} + \text{False positive}_\text{topic}}
+\end{align*}
 $$
 
 and so on....
