@@ -242,8 +242,9 @@ class DefaultTreeSampler(SamplerBase):
         self.test_actual_normalization_factor = self.test_raw_normalization_factor / np.array(no_draws)
 
         # boosting multiplier per level. this is to make sure the higher the level the more the domination.
-        # the sum is 1+5+25+125+625=781, so a combo with sample_size = 10000 should dominate this in turn.
-        per_level_boosting_factor = np.array([1, 5, 25, 125, 625])
+        # the sum is around 5000, so a combo with sample_size = 10000 should dominate this in turn should have
+        # zero-one ratio 2:1
+        per_level_boosting_factor = np.array([1, 1.5, 2.25, 3.375, 5.0625], dtype=np.float32) * 379
         self.train_multiplier = self.train_actual_normalization_factor * per_level_boosting_factor
         self.test_multiplier = self.test_actual_normalization_factor * per_level_boosting_factor
 
@@ -284,9 +285,6 @@ class DefaultTreeSampler(SamplerBase):
         topics = np.concatenate([np.concatenate(topics_tree), topics_ll])
         contents = np.concatenate([np.concatenate(contents_tree), contents_ll])
         cors = np.concatenate([np.concatenate(cors_tree), cors_ll])
-
-        dampen_locs = np.logical_and(tree_levels == len(self.generation_sizes), np.absolute(cors) < 0.00001)
-        multipliers[dampen_locs] = multipliers[dampen_locs] / 10.0
 
         return topics, contents, cors, None, tree_levels, multipliers
 

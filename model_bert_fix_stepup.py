@@ -406,7 +406,7 @@ class DynamicMetrics(model_bert_fix.CustomMetrics):
         entropy_nolang = tf.keras.metrics.BinaryCrossentropy(name=name + "_entropy_nolang")
         self.metrics.append({"metrics": [accuracy, precision, recall, entropy, accuracy_nolang, precision_nolang, recall_nolang, entropy_nolang], "sampler": tuple_choice_sampler, "sampler_overshoot": tuple_choice_sampler_overshoot, "sample_choice": sample_choice})
 
-    def add_tree_metric(self, name, tuple_choice_sampler_tree, level, sample_choice = TEST, threshold = 0.6):
+    def add_tree_metric(self, name, tuple_choice_sampler_tree, level, sample_choice = TEST, threshold = 0.7):
         accuracy = tf.keras.metrics.BinaryAccuracy(name = name + "_accuracy", threshold=threshold)
         precision = tf.keras.metrics.Precision(name = name + "_precision", thresholds=threshold)
         recall = tf.keras.metrics.Recall(name = name + "_recall", thresholds=threshold)
@@ -544,6 +544,11 @@ default_tree_metrics.add_tree_metric("treelv1", data_bert_sampler.default_tree_s
 default_tree_metrics.add_tree_metric("treelv2", data_bert_sampler.default_tree_sampler_instance, level = 2, sample_choice = DynamicMetrics.TEST)
 default_tree_metrics.add_tree_metric("treelv3", data_bert_sampler.default_tree_sampler_instance, level = 3, sample_choice = DynamicMetrics.TEST)
 default_tree_metrics.add_tree_metric("treelv4", data_bert_sampler.default_tree_sampler_instance, level = 4, sample_choice = DynamicMetrics.TEST)
+default_tree_metrics.add_tree_metric("treelv0_stringent", data_bert_sampler.default_tree_sampler_instance, level = 0, sample_choice = DynamicMetrics.TEST, threshold=0.8)
+default_tree_metrics.add_tree_metric("treelv1_stringent", data_bert_sampler.default_tree_sampler_instance, level = 1, sample_choice = DynamicMetrics.TEST, threshold=0.8)
+default_tree_metrics.add_tree_metric("treelv2_stringent", data_bert_sampler.default_tree_sampler_instance, level = 2, sample_choice = DynamicMetrics.TEST, threshold=0.8)
+default_tree_metrics.add_tree_metric("treelv3_stringent", data_bert_sampler.default_tree_sampler_instance, level = 3, sample_choice = DynamicMetrics.TEST, threshold=0.8)
+default_tree_metrics.add_tree_metric("treelv4_stringent", data_bert_sampler.default_tree_sampler_instance, level = 4, sample_choice = DynamicMetrics.TEST, threshold=0.8)
 
 """
 default_tree_metrics.add_tree_metric("treelv0_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 0, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
