@@ -285,7 +285,8 @@ class DefaultTreeSampler(SamplerBase):
         contents = np.concatenate([np.concatenate(contents_tree), contents_ll])
         cors = np.concatenate([np.concatenate(cors_tree), cors_ll])
 
-
+        dampen_locs = np.logical_and(tree_levels == len(self.generation_sizes), np.absolute(cors) < 0.00001)
+        multipliers[dampen_locs] = multipliers[dampen_locs] / 10.0
 
         return topics, contents, cors, None, tree_levels, multipliers
 
