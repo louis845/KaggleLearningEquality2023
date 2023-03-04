@@ -9,6 +9,7 @@ import math
 import gc
 import tensorflow as tf
 import os
+import shutil
 
 class Node:
     def __init__(self, level, topic_num_id, topic_str_id):
@@ -360,18 +361,53 @@ def add_content_to_topic(content_num_id, topic_num_id, out_topics_folder,
     buffer_contents[op_idx].append(content_num_id)
     buffer_last_access[op_idx] = access_no"""
 
-def generate_pivot_correlations(contents_restrict, out_contents_folder, out_topics_folder, total_num_topics,
-                                buf_size=5000, chunk_size=134217728):
+def save_chunk_data(chunk_topics, chunk_contents, out_topics_folder, saved_partitions):
+    spl = np.where(chunk_topics == -1)[0]
+
+    if len(spl) == 0:
+        sort_order = np.argsort(chunk_topics)
+        chunk_topics = chunk_topics[sort_order]
+        chunk_contents = chunk_contents[sort_order]
+    else:
+        spl = spl[0]
+        chunk_topics2 = chunk_topics[:spl]
+        chunk_contents2 = chunk_contents[:spl]
+        sort_order = np.argsort(chunk_topics2)
+        chunk_topics = chunk_topics2[sort_order]  # sort according to topics.
+        chunk_contents = chunk_contents2[sort_order]  # sort according to topics.
+
+        del chunk_topics2, chunk_contents2
+
+    topics = np.unique(chunk_topics)
+    if topics[0] == -1:
+        topics = topics[1:]
+    ls = np.searchsorted(chunk_topics, topics, side="left")
+    rs = np.searchsorted(chunk_topics, topics, side="right")
+
+    for k in range(len(topics)):
+        topic_num_id = topics[k]
+        topic_nid_folder = out_topics_folder + "topic" + str(topic_num_id) + "/"
+        curp = saved_partitions[topic_num_id]
+        if curp == 0:
+            os.mkdir(topic_nid_folder)
+        saved_partitions[topic_num_id] = curp + 1
+        np.save(topic_nid_folder + str(curp) + ".npy", chunk_contents[ls[k]:rs[k]])
+
+    del chunk_contents, chunk_topics
+
+def generate_pivot_correlations(contents_restrict, out_contents_folder, out_topics_folder,
+                                total_num_topics, chunk_size=8388608):
     if not os.path.exists(out_topics_folder):
         os.mkdir(out_topics_folder)
 
-    #chunk = np.zeros(shape=(2, chunk_size), dtype=np.int32) # [0,:] is topics, [1,:] is contents
+    saved_partitions = np.zeros(shape=total_num_topics, dtype=np.int32)
+
     chunk_topics = np.zeros(shape=chunk_size, dtype=np.int32)
     chunk_contents = np.zeros(shape=chunk_size, dtype=np.int32)
     num_chunks = 0
 
     chunk_start = 0 # max chunk idx is chunk_size
-    # chunk[:, :] = -1
+
     chunk_topics[:] = -1
     chunk_contents[:] = -1
 
@@ -392,11 +428,7 @@ def generate_pivot_correlations(contents_restrict, out_contents_folder, out_topi
             chunk_start = chunk_end
 
             if chunk_end == chunk_size:
-                sort_order = np.argsort(chunk_topics[:])
-                chunk_topics = chunk_topics[sort_order] # sort according to topics.
-                chunk_contents = chunk_contents[sort_order]  # sort according to topics.
-                np.save("tmp_chunk" + str(num_chunks)+"_topics.npy", chunk_topics)
-                np.save("tmp_chunk" + str(num_chunks) + "_contents.npy", chunk_contents)
+                save_chunk_data(chunk_topics, chunk_contents, out_topics_folder, saved_partitions)
                 chunk_start = 0
                 num_chunks += 1
                 chunk_topics[:] = -1
@@ -409,54 +441,22 @@ def generate_pivot_correlations(contents_restrict, out_contents_folder, out_topi
             ctime = time.time()
 
     if (chunk_topics != -1).sum() > 0:
-        sort_order = np.argsort(chunk_topics[:])
-        chunk_topics = chunk_topics[sort_order]  # sort according to topics.
-        chunk_contents = chunk_contents[sort_order]  # sort according to topics.
-        np.save("tmp_chunk" + str(num_chunks) + "_topics.npy", chunk_topics)
-        np.save("tmp_chunk" + str(num_chunks) + "_contents.npy", chunk_contents)
+        save_chunk_data(chunk_topics, chunk_contents, out_topics_folder, saved_partitions)
         num_chunks += 1
 
-    gchunk_topics = chunk_topics
-    gchunk_contents = chunk_contents
-    del chunk_start
+    del chunk_start, chunk_contents, chunk_topics
 
-    topics_list = np.empty(shape = buf_size, dtype="object")
-    for k in range(buf_size):
-        topics_list[k] = []
+    ctime = time.time()
+    for topic_num_id in range(total_num_topics):
+        topic_nid_folder = out_topics_folder + "topic" + str(topic_num_id) + "/"
+        if saved_partitions[topic_num_id] > 0:
+            np.save(out_topics_folder + str(topic_num_id) + ".npy",
+                np.sort(np.concatenate([np.load(topic_nid_folder + str(k) + ".npy") for k in range(saved_partitions[topic_num_id])], axis=0))
+            )
+            shutil.rmtree(topic_nid_folder)
+        if topic_num_id % 1000 == 0:
+            ctime = time.time() - ctime
+            print("Saved: ", topic_num_id, " out of ", total_num_topics, " Time:", ctime)
+            ctime = time.time()
+    del saved_partitions
 
-    for j in range(int(math.ceil((0.0+total_num_topics) / buf_size))):
-        ctime = time.time()
-        start = j * buf_size
-        end = (j+1) * buf_size
-
-        if num_chunks > 1:
-            for k in range(num_chunks):
-                del gchunk_topics, gchunk_contents
-                gchunk_topics = np.load("tmp_chunk" + str(k) + "_topics.npy")
-                gchunk_contents = np.load("tmp_chunk" + str(k) + "_contents.npy")
-
-                for top_num_id in range(start, end):
-                    lft = np.searchsorted(gchunk_topics, top_num_id, side="left")
-                    rgt = np.searchsorted(gchunk_topics, top_num_id, side="right")
-                    if rgt > lft:
-                        topics_list[top_num_id - start].extend(list(gchunk_contents[lft:rgt]))
-                gc.collect()
-        else:
-            for top_num_id in range(start, end):
-                lft = np.searchsorted(gchunk_topics, top_num_id, side="left")
-                rgt = np.searchsorted(gchunk_topics, top_num_id, side="right")
-                if rgt > lft:
-                    topics_list[top_num_id - start].extend(list(gchunk_contents[lft:rgt]))
-
-        for top_num_id in range(start, end):
-            if len(topics_list[top_num_id - start]) > 0:
-                fl = out_topics_folder + str(top_num_id) + ".npy"
-                np.save(fl, np.sort(np.array(topics_list[top_num_id - start], dtype=np.int32)))
-                topics_list[top_num_id - start].clear()
-
-        gc.collect()
-
-        ctime = time.time() - ctime
-        print("Saved batch: ", j, " out of ", int(math.ceil((0.0+total_num_topics) / buf_size)), " Time:", ctime)
-
-    del gchunk_topics, gchunk_contents
