@@ -41,7 +41,7 @@ There will be a bunch of models to analyze. Add return values to your previously
 # 2023-03-04 TODO:
 There are some predicted data for you to compare with the real data. Help compute the following metrics:
 
-$$
+$
 \begin{aligned}
 \text{True positive} = \text{Predicted to be true and correct (actually true)}   \\
 \text{False positive} = \text{Predicted to be true and wrong (actually false)}   \\
@@ -51,13 +51,13 @@ $$
 \text{Recall} = \text{\text{True positive}}{\text{True positive} + \text{False negative}}   \\
 F_2 = 5 \cdot \frac{\text{Precision} \cdot \text{Recall}}{4 \cdot \text{Precision} + \text{Recall}}
 \end{aligned}
-$$
+$
 
 Apart from computing these for the whole set, we compute the rowwise versions also. This means
 
-$$
+$
 \text{Precision}_r = \frac{1}{|\text{rows}|}\sum_{\text{row} \in \text{rows}} \text{\text{True positive}_\text{row}}{\text{True positive}_\text{row} + \text{False positive}_\text{row}}
-$$
+$
 
 and so on....
 
