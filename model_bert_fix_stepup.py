@@ -46,10 +46,11 @@ class Model(tf.keras.Model):
         self.dropout2_fp = tf.keras.layers.Dropout(rate=0.3)
         self.dense3_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense3_fp")
         self.dropout3_fp = tf.keras.layers.Dropout(rate=0.3)
-        self.dense4_fp = tf.keras.layers.Dense(units=128, name = "dense4_fp")
-        self.relu4 = tf.keras.layers.ReLU()
+        self.dense4_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense4_fp")
         self.dropout4_fp = tf.keras.layers.Dropout(rate=0.3)
-        self.dense5 = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "dense5")
+        self.dense5_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense5_fp")
+        self.dropout5_fp = tf.keras.layers.Dropout(rate=0.3)
+        self.final = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "final")
 
         # loss functions and eval metrics
         self.accuracy = tf.keras.metrics.BinaryAccuracy(name="accuracy")
@@ -107,8 +108,9 @@ class Model(tf.keras.Model):
         ], axis=-1)), training=training)
         t = self.dropout2_fp(self.dense2_fp(t), training=training)
         t = self.dropout3_fp(self.dense3_fp(t), training=training)
-        t = self.dropout4_fp(self.relu4(self.dense4_fp(t)), training=training)
-        t = self.dense5(t)
+        t = self.dropout4_fp(self.dense4_fp(t), training=training)
+        t = self.dropout5_fp(self.dense5_fp(t), training=training)
+        t = self.final(t)
         if (training and actual_y is not None and actual_y.shape[0] is not None
             and actual_y.shape[0] == shape[0] and final_tree_level is not None and
                 final_tree_level.shape[0] is not None and final_tree_level.shape[0] == shape[0]):

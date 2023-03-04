@@ -62,7 +62,7 @@ def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func =
         custom_metrics = model_bert_fix_stepup.default_metrics
     if custom_stopping_func is None:
         custom_stopping_func = model_bert_fix_stepup.DefaultStoppingFunc(modeldir)
-    model.set_training_params(15000, training_sampler = training_sampler, training_max_size = 75000, custom_metrics = custom_metrics, custom_stopping_func = custom_stopping_func,
+    model.set_training_params(12500, training_sampler = training_sampler, training_max_size = 12500, custom_metrics = custom_metrics, custom_stopping_func = custom_stopping_func,
                               custom_tuple_choice_sampler = custom_tuple_choice_sampler, custom_tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot)
 
     if not os.path.isdir(modeldir + "/"):
@@ -111,7 +111,7 @@ tuple_choice_sampler = data_bert_sampler.MixedSampler(sampler_list = [data_bert_
 metrics = model_bert_fix.obtain_overshoot_metric_instance(tuple_choice_sampler)
 train_model("overshoot23", custom_metrics = metrics, custom_tuple_choice_sampler =  tuple_choice_sampler)"""
 
-train_model_stepup("minilm12_eng_model_stepup")
+train_model_stepup("minilm12_eng_model_stepup_moreunits")
 
 """tuple_choice_sampler = data_bert_sampler.default_sampler_instance
 tuple_choice_sampler_overshoot = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance])
