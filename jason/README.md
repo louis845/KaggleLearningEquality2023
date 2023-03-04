@@ -39,7 +39,7 @@ There are 7 more models in the models folder. Git fetch -> git pull to download 
 There will be a bunch of models to analyze. Add return values to your previously defined function to obtain the optimal epoch, and optimal values for test_recall and test_precision for a model. Call your function for each new model, and find the model which performs the best. Find the corresponding weight_decay and noise.
 
 # 2023-03-04 TODO:
-There are some predicted data for you to compare with the real data. The real data is in 
+*You can message or call me if you have problems/questions*. There are some predicted data for you to compare with the real data. The real data is in 
 
     ../data/contents_translate.csv
     ../data/topics_translate.csv
@@ -109,7 +109,7 @@ $$
 \end{align*}
 $$
 
-and try to see if there is a difference. 
+and try to see if there is a difference. For the metrics depending on size, notice that size is a numerical value too. Maybe you can plot a line graph to see how the average scores depends on the size.
 
 
 Also, compute the correlations **with respect to tree structure**, such that there exist a *tree correlation* between $(T,C)$ if and only if there exists a subnode $T'$ of $T$ such that $(T',C)$ is a *usual correlation*. Compute all the above scores in **Requirements + Requirements2** with respect to these correlations.
