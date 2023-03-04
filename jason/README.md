@@ -42,6 +42,7 @@ There will be a bunch of models to analyze. Add return values to your previously
 There are some predicted data for you to compare with the real data. Help compute the following metrics:
 
 $$
+\begin{gather*}
 \text{True positive} = \text{Predicted to be true and correct (actually true)}   \\
 \text{False positive} = \text{Predicted to be true and wrong (actually false)}   \\
 \text{True negative} = \text{Predicted to be false and correct (actually false)}   \\
@@ -49,6 +50,7 @@ $$
 \text{Precision} = \frac{\text{True positive}}{\text{True positive} + \text{False positive}}   \\
 \text{Recall} = \frac{\text{True positive}}{\text{True positive} + \text{False negative}}   \\
 F_2 = 5 \cdot \frac{\text{Precision} \cdot \text{Recall}}{4 \cdot \text{Precision} + \text{Recall}}
+\end{gather*}
 $$
 
 Apart from computing these for the whole set, we compute the rowwise versions also. This means
