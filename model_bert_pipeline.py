@@ -10,18 +10,20 @@ import tensorflow_models as tfm
 import numpy as np
 import pandas as pd
 import os
+import gc
+import sys
 # from IPython.display import Markdown
 # import matplotlib.pyplot as plt
 
-def train_model(model_name, custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None):
-    model = model_bert_fix.Model(units_size = 512)
+def train_model(model_name, custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None, init_noise = 0.05, weight_decay = 0.01):
+    model = model_bert_fix.Model(units_size = 512, init_noise=init_noise)
     modeldir = config.training_models_path + model_name
 
-    training_sampler = model_bert_fix.TrainingSampler(embedded_vectors_folder = config.resources_path + "bert_embedded_vectors/bert_vectorized_L6_H128/",
+    training_sampler = model_bert_fix.TrainingSampler(embedded_vectors_folder = config.resources_path + "sbert_vectors/mininet384/",
                                    contents_one_hot_file = config.resources_path + "one_hot_languages/contents_lang_train.npy",
                                    topics_one_hot_file = config.resources_path + "one_hot_languages/topics_lang_train.npy", device = "cpu")
     print("postsampler")
-    model.compile()
+    model.compile(weight_decay = weight_decay)
     if custom_metrics is None:
         custom_metrics = model_bert_fix.default_metrics
     if custom_stopping_func is None:
@@ -34,7 +36,7 @@ def train_model(model_name, custom_metrics = None, custom_stopping_func = None, 
     ctime = time.time()
     checkpoint_file = modeldir + "/{epoch:07d}.ckpt"
     logging_file = modeldir + "/logfile.csv"
-    callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_file, save_weights_only = False, verbose = 0, save_freq = 20)
+    callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_file, save_weights_only = False, verbose = 0, save_freq = 5)
     csv_logger = tf.keras.callbacks.CSVLogger(logging_file, separator=',', append=False)
 
     hist = model.fit(np.array([1, 2]), epochs = 4000, callbacks=[callback, csv_logger], verbose = 2, steps_per_epoch = 1)
@@ -45,17 +47,17 @@ def train_model(model_name, custom_metrics = None, custom_stopping_func = None, 
 
     del model, training_sampler
 
-def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None, custom_tuple_choice_sampler_overshoot = None):
-    model = model_bert_fix_stepup.Model(units_size = 512)
+def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None, custom_tuple_choice_sampler_overshoot = None, init_noise = 0.05, weight_decay = 0.0005):
+    model = model_bert_fix_stepup.Model(units_size = 512, init_noise=init_noise)
     modeldir = config.training_models_path + model_name
     checkpoint_file = modeldir + "/{epoch:07d}.ckpt"
     logging_file = modeldir + "/logfile.csv"
 
-    training_sampler = model_bert_fix.TrainingSampler(embedded_vectors_folder = config.resources_path + "bert_embedded_vectors/bert_vectorized_L6_H128/",
+    training_sampler = model_bert_fix.TrainingSampler(embedded_vectors_folder = config.resources_path + "sbert_vectors/mininet_L12_english384/",
                                    contents_one_hot_file = config.resources_path + "one_hot_languages/contents_lang_train.npy",
                                    topics_one_hot_file = config.resources_path + "one_hot_languages/topics_lang_train.npy", device = "cpu")
     print("postsampler")
-    model.compile(weight_decay = 0.0005, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.0005, decay_steps = 20000, alpha = 0.005)) # 0.0005
+    model.compile(weight_decay = weight_decay, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.0005, decay_steps = 20000, alpha = 0.005)) # 0.0005
     if custom_metrics is None:
         custom_metrics = model_bert_fix_stepup.default_metrics
     if custom_stopping_func is None:
@@ -99,9 +101,9 @@ def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func =
 
     del model, training_sampler
 
-"""train_model("direct_model")
 
-tuple_choice_sampler = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance])
+
+"""tuple_choice_sampler = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance])
 metrics = model_bert_fix.obtain_overshoot_metric_instance(tuple_choice_sampler)
 train_model("overshoot2", custom_metrics = metrics, custom_tuple_choice_sampler =  tuple_choice_sampler)
 
@@ -109,7 +111,7 @@ tuple_choice_sampler = data_bert_sampler.MixedSampler(sampler_list = [data_bert_
 metrics = model_bert_fix.obtain_overshoot_metric_instance(tuple_choice_sampler)
 train_model("overshoot23", custom_metrics = metrics, custom_tuple_choice_sampler =  tuple_choice_sampler)"""
 
-train_model_stepup("direct_model_stepup_noise035")
+train_model_stepup("minilm12_eng_model_stepup")
 
 """tuple_choice_sampler = data_bert_sampler.default_sampler_instance
 tuple_choice_sampler_overshoot = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance])

@@ -330,6 +330,24 @@ class DefaultTreeSampler(SamplerBase):
 
         return topics, contents, cors, None, tree_levels, multipliers
 
+    def obtain_train_notree_sample(self, sample_size):
+        topics_ll, contents_ll, cors_ll = self.sample_tree_generation_functions[-1]["train_sample"](sample_size // 2,
+                                                                                                    sample_size // 2)
+
+        tree_levels = np.repeat(len(self.sample_tree_generation_functions)-1, len(cors_ll))
+        multipliers = np.repeat(1, len(cors_ll))
+
+        return topics_ll, contents_ll, cors_ll, None, tree_levels, multipliers
+
+    def obtain_test_notree_sample(self, sample_size):
+        topics_ll, contents_ll, cors_ll = self.sample_tree_generation_functions[-1]["test_sample"](sample_size // 2,
+                                                                                                    sample_size // 2)
+
+        tree_levels = np.repeat(len(self.sample_tree_generation_functions)-1, len(cors_ll))
+        multipliers = np.repeat(1, len(cors_ll))
+
+        return topics_ll, contents_ll, cors_ll, None, tree_levels, multipliers
+
     def obtain_train_square_sample(self, sample_size):
         raise Exception("This function is not supported for tree samplers.")
 

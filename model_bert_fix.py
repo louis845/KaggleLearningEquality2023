@@ -19,7 +19,6 @@ Model output:
 A (batch_size) tensor (vector) containing the predicted probabilities. The model tries to predict whether the set of topics contain the
 given content.
 """
-import tensorflow
 import tensorflow as tf
 import numpy as np
 import data_bert
@@ -234,9 +233,13 @@ class TrainingSampler:
 
         del with_lang, no_lang
         return input_data
+
+    def __del__(self):
+        del self.contents_title, self.contents_description, self.contents_one_hot, self.topics_title, self.topics_description, self.topics_one_hot
+        gc.collect()
 class Model(tf.keras.Model):
     # only the argument units_size define the shape of the model. the argument training_sampler is used for training only.
-    def __init__(self, units_size = 512):
+    def __init__(self, units_size = 512, init_noise = 0.05):
         super(Model, self).__init__()
 
         self.training_sampler = None
@@ -246,17 +249,17 @@ class Model(tf.keras.Model):
         self.concat_layer = tf.keras.layers.Concatenate(axis = 2)
 
         # standard stuff
-        self.dropout0 = tf.keras.layers.GaussianNoise(stddev = 0.05)
+        self.dropout0 = tf.keras.layers.GaussianNoise(stddev = init_noise)
         self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense1")
-        self.dropout1 = tf.keras.layers.Dropout(rate=0.5)
+        self.dropout1 = tf.keras.layers.Dropout(rate=0.1)
         self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense2")
-        self.dropout2 = tf.keras.layers.Dropout(rate=0.5)
+        self.dropout2 = tf.keras.layers.Dropout(rate=0.1)
         self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense3")
-        self.dropout3 = tf.keras.layers.Dropout(rate=0.5)
+        self.dropout3 = tf.keras.layers.Dropout(rate=0.1)
         self.dense4 = tf.keras.layers.Dense(units=units_size, activation="relu", name = "dense4")
-        self.dropout4 = tf.keras.layers.Dropout(rate=0.5)
-        self.dense5 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense5")
-        self.dropout5 = tf.keras.layers.Dropout(rate=0.5)
+        self.dropout4 = tf.keras.layers.Dropout(rate=0.1)
+        self.dense5 = tf.keras.layers.Dense(units=units_size // 4, activation="relu", name="dense5")
+        self.dropout5 = tf.keras.layers.Dropout(rate=0.1)
         self.dense_final = tf.keras.layers.Dense(units=1, activation="sigmoid", name = "dense_final")
 
 

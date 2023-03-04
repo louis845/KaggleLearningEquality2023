@@ -8,6 +8,8 @@ import time
 import math
 import gc
 import tensorflow as tf
+import os
+import shutil
 
 class Node:
     def __init__(self, level, topic_num_id, topic_str_id):
@@ -20,11 +22,6 @@ class Node:
 
     def __str__(self):
         return "Topic: " + self.topic_str_id + "   " + self.topic_num_id
-
-    def __del__(self):
-        for child in self.children:
-            del child
-        del self.children
 
 def find_node_by_str_id(total_nodes, str_id):
     for node in total_nodes:
@@ -40,7 +37,7 @@ def compute_preorder_id(node, cur_id, topic_id_to_preorder_id, preorder_id_to_to
 
     last_id = cur_id
     for child in node.children:
-        last_id = compute_preorder_id(child, last_id + 1)
+        last_id = compute_preorder_id(child, last_id + 1, topic_id_to_preorder_id, preorder_id_to_topic_id, topic_id_to_subtree_end)
     node.subtree_end_id = last_id + 1
 
     topic_id_to_subtree_end[node.topic_num_id] = node.subtree_end_id
@@ -58,10 +55,10 @@ def generate_tree_structure_information(topics):
 
     # generate tree structure
     for level in range(np.max(topics["level"].unique())):
-        for str_id in topics.loc[topics["level"] == level + 1].index:
+        for str_id in topics.loc[topics["level"] == (level + 1)].index:
             parent = find_node_by_str_id(total_nodes, topics.loc[str_id, "parent"])
 
-            node = Node(level=0, topic_num_id=topics_inv_map[str_id], topic_str_id=str_id)
+            node = Node(level=(level+1), topic_num_id=topics_inv_map[str_id], topic_str_id=str_id)
             node.parent = parent
             parent.children.append(node)
 
@@ -75,12 +72,19 @@ def generate_tree_structure_information(topics):
     for node in topic_trees:
         cur_id = compute_preorder_id(node, cur_id, topic_id_to_preorder_id, preorder_id_to_topic_id, topic_id_to_subtree_end) + 1
 
+    for node in total_nodes:
+        node.parent = None
+        for k in range(len(node.children)):
+            node.children[k] = None
+        del node.children
     del total_nodes, topic_trees
     gc.collect()
     
     return topics_inv_map, topic_id_to_preorder_id, topic_id_to_subtree_end, preorder_id_to_topic_id
 
-def obtain_int32mask(start, end, size):
+# LEGACY CODE, used in previous implementations using GPU
+
+"""def obtain_int32mask(start, end, size):
     mask = np.zeros(shape=int(math.ceil(size / 32.0)), dtype=np.int32)
     mstart = start // 32
     mend = end // 32
@@ -107,7 +111,7 @@ def obtain_int32mask(start, end, size):
     return mask
 
 bits_mask = np.power(2,np.flip(np.arange(32, dtype = np.int32)))
-bits_mask = np.power(2,np.flip(np.arange(32, dtype = np.int32)))
+bits_mask_tf = tf.constant(np.power(2,np.flip(np.arange(32, dtype = np.int32))), tf.int32)
 def bool_to_int32mask(bool_mask):
     rm = len(bool_mask) % 32
     if rm == 0:
@@ -117,69 +121,167 @@ def bool_to_int32mask(bool_mask):
     rs = np.reshape(np.pad(bool_mask, pad_width = (0, padding)), newshape = (int(math.ceil(len(bool_mask) / 32.0)), 32))
     return np.dot(rs, bits_mask).astype(np.int32)
 
-def predict_contents(proba_callback, content_ids, topics_restrict, full_topics_data, full_contents_data):
-    contents_id = tf.repeat(tf.constant(content_ids), len(topics_restrict))
-    topics_id = tf.tile(tf.constant(topics_restrict), [len(content_ids)])
+def bool_to_int32mask_tf(bool_mask):
+    rm = tf.math.floormod(bool_mask.shape[1], 32)
+    pad_res = tf.concat([bool_mask, tf.zeros(shape = (bool_mask.shape[0], 32 - rm), dtype=bool_mask.dtype)], axis=1)
+    rs = tf.reshape(pad_res, shape=(bool_mask.shape[0], tf.math.floordiv(pad_res.shape[1], 32), 32))
+    return tf.linalg.matvec(rs, bits_mask_tf)
 
-    probabilities = proba_callback.predict_probabilities_with_data(topics_id, contents_id, full_topics_data,
-                                                                   full_contents_data, "gpu")
+def bool_to_int32mask_tf_row(bool_mask):
+    rm = tf.math.floormod(bool_mask.shape[0], 32)
+    pad_res = tf.concat([bool_mask, tf.zeros(shape = (32 - rm), dtype=bool_mask.dtype)], axis=0)
+    rs = tf.reshape(pad_res, shape=(tf.math.floordiv(pad_res.shape[0], 32), 32))
+    return tf.linalg.matvec(rs, bits_mask_tf)
+
+@tf.function
+def graph_mask_any(res_mask, topic_tree_mask):
+    return tf.reduce_any(tf.bitwise.bitwise_and(
+                    res_mask,
+                    topic_tree_mask
+                ) != 0, axis=1)
+
+@tf.function
+def res_mask_from_probabilities(probabilities, length_contents, length_topics, accept_threshold, preorder_id_to_topics_restrict_id):
+    probabilities = tf.reshape(probabilities, shape=(length_contents, length_topics))
+    pad_probs = tf.concat([probabilities, tf.zeros(shape=(probabilities.shape[0], 1), dtype=probabilities.dtype)],
+                          axis=1)
+    has_cor_places = pad_probs > accept_threshold
+    has_correlation_topics_in_preorder = tf.cast(tf.gather(has_cor_places, preorder_id_to_topics_restrict_id, axis=1),
+                                                 dtype=tf.int32)
+
+    return bool_to_int32mask_tf(has_correlation_topics_in_preorder)
+
+@tf.function
+def graph_mask_any_general(res_mask, topic_tree_mask):
+    loop_variables = (tf.constant(0),
+                      tf.TensorArray(tf.bool, size=res_mask.shape[0], dynamic_size=False,
+                                     element_shape=tf.TensorShape([topic_tree_mask.shape[0]]) ))
+
+    def condition(k, mmasked_result):
+        return k < res_mask.shape[0]
+
+    def body(k, mmasked_result):
+        print("First eager exec: ", k)
+        return (k+1, mmasked_result.write(k, graph_mask_any(topic_tree_mask, res_mask[k, :])))
+
+    return tf.while_loop(condition, body, loop_variables, parallel_iterations=4)[1].stack()
+
+@tf.function
+def obtain_masked_result_directly(probabilities, length_contents, length_topics,
+                                  accept_threshold, preorder_id_to_topics_restrict_id, topic_tree_mask):
+    res_mask = res_mask_from_probabilities(probabilities, length_contents, length_topics, accept_threshold, preorder_id_to_topics_restrict_id)
+    return graph_mask_any_general(res_mask, topic_tree_mask)
+@tf.function
+def obtain_masked_result_directly_with_segsum(probabilities, length_contents, length_topics,
+                                  accept_threshold, preorder_id_to_topics_restrict_id, topic_tree_min,
+                                  topic_tree_max, parallel_execs):
+    has_correlation_topics_in_preorder = preorder_correlations_from_probabilities(probabilities, length_contents, length_topics, accept_threshold, preorder_id_to_topics_restrict_id)
+    preorder_length = has_correlation_topics_in_preorder.shape[0]
+    loop_variables = (tf.constant(0),
+                      tf.TensorArray(tf.bool, size=topic_tree_min.shape[0], dynamic_size=False,
+                                     element_shape=tf.TensorShape([length_contents])))
+
+    def condition(k, mmasked_result):
+        return k < topic_tree_min.shape[0]
+
+    def body(k, mmasked_result):
+        print("First eager exec: ", k)
+        rg = tf.range(preorder_length)
+        seg_mask = tf.cast(tf.logical_and(rg >= topic_tree_min[k], rg < topic_tree_max[k]), dtype=tf.int32)
+        agg = tf.math.unsorted_segment_sum(has_correlation_topics_in_preorder, seg_mask, num_segments=2)[1, :]
+        return (k + 1, mmasked_result.write(k,
+            agg > 0
+        ))
+
+    return tf.transpose(
+        tf.while_loop(condition, body, loop_variables,
+                      parallel_iterations=parallel_execs
+        )[1].stack()
+    )
+
+@tf.function
+def fast_multiply_has(mat1, mat2):
+    return tf.linalg.matmul(mat1, mat2) > 0 """
+
+@tf.function
+def preorder_correlations_from_probabilities(probabilities, length_contents, length_topics, accept_threshold, preorder_id_to_topics_restrict_id):
+    probabilities = tf.reshape(probabilities, shape=(length_contents, length_topics))
+    pad_probs = tf.concat([probabilities, tf.zeros(shape=(probabilities.shape[0], 1), dtype=probabilities.dtype)],
+                          axis=1)
+    has_cor_places = pad_probs > accept_threshold
+    has_correlation_topics_in_preorder = tf.gather(has_cor_places, preorder_id_to_topics_restrict_id, axis=1)
+    return has_correlation_topics_in_preorder
+
+@tf.function
+def predict_contents(proba_callback, content_ids, topics_restrict, full_topics_data, full_contents_data):
+    contents_id = tf.repeat(content_ids, topics_restrict.shape[0])
+    topics_id = tf.tile(topics_restrict, [content_ids.shape[0]])
+
+    probabilities = proba_callback.predict_probabilities_with_data_return_gpu(topics_id, contents_id, full_topics_data,
+                                                                   full_contents_data)
     return probabilities
 
 # in this case device must be GPU. for each content in contents_restrict, we compute the possible topics the contents
 # belong to.
 def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restrict, contents_restrict,
-                                      full_topics_data, full_contents_data, accept_threshold = 0.6):
+                                      full_topics_data, full_contents_data, accept_threshold = 0.6,
+                                      init_batch_size = 10, init_max_batch_size = 30,
+                                      out_contents_folder="contents_tree/", out_topics_folder="topics_tree/"):
+    topics_restrict = np.sort(topics_restrict)
+    contents_restrict = np.sort(contents_restrict)
     topics_inv_map, topic_id_to_preorder_id, topic_id_to_subtree_end, preorder_id_to_topic_id = generate_tree_structure_information(
         data_topics)
 
-    # per each topic (no matter in topics_restrict or not), we create a mask to represent the subtree starting with
-    # the topic node. this mask would be in bit format, represented by int32 tensor.
-    # the first axis would be the topics axis (in usual topic_num_id), while the second axis is the bitwise axis
-    # in topic_preorder_id. the bit at the (topic_num_id, topic_preorder_id) position will signify whether the
-    # topic represented by topic_num_id is a (non-strict) ancestor or the topic represented by topic_preorder_id.
-    preorder_size = int(math.ceil(len(data_topics) / 32.0))
-    topic_tree_mask = np.zeros(shape = (len(data_topics), preorder_size), dtype = np.int32)
-    for topic_num_id in range(len(data_topics)):
-        topic_tree_mask[topic_num_id, :] = obtain_int32mask(topic_id_to_preorder_id[topic_num_id],
-                                                            topic_id_to_subtree_end[topic_num_id], len(data_topics))
-    topic_tree_mask = tf.constant(topic_tree_mask, dtype = tf.int32)
+    # this is a mapping from the preorder id to the topics restrict id (meaning preorder_id -> k, where
+    # topics_restrict[k] = (preorder_id -> topics_id)).
+    preorder_id_to_topics_restrict_id = np.zeros(shape=len(preorder_id_to_topic_id), dtype=np.int32)
+    left_side = np.searchsorted(topics_restrict, preorder_id_to_topic_id, side="left")
+    right_side = np.searchsorted(topics_restrict, preorder_id_to_topic_id, side="right")
 
-    # the variable used to store the correlations between topic and content.
-    # this are the possible topics per content.
-    content_correlations = np.empty(shape = (full_contents_data.shape[0]), dtype = "object")
+    preorder_id_to_topics_restrict_id[right_side > left_side] = left_side[right_side > left_side]
+    preorder_id_to_topics_restrict_id[right_side <= left_side] = len(topics_restrict)
+    del left_side, right_side
+    preorder_id_to_topics_restrict_id = tf.constant(preorder_id_to_topics_restrict_id)
+
+    if not os.path.isdir(out_contents_folder):
+        os.mkdir(out_contents_folder)
 
     # now we compute the per content topic trees here.
-    ctime = time.time()
     length = len(contents_restrict)
 
-    batch_size = 10
+    batch_size = init_batch_size
+    max_batch_size = init_max_batch_size
     tlow = 0
     continuous_success = 0
     prev_tlow = 0
-    ctime = 0
+    ctime = time.time()
+    ctime2 = time.time()
     while tlow < length:
         thigh = min(tlow + batch_size, length)
         content_ids = contents_restrict[np.arange(tlow, thigh)]
+        probabilities = None
         try:
-            probabilities = predict_contents(proba_callback, content_ids, topics_restrict, full_topics_data,
+            probabilities = predict_contents(proba_callback, tf.constant(content_ids), tf.constant(topics_restrict), full_topics_data,
                                          full_contents_data)
-            probabilities = (probabilities.reshape((thigh - tlow), len(topics_restrict))) > accept_threshold
+            preorder_probas = preorder_correlations_from_probabilities(probabilities, thigh-tlow, len(topics_restrict),
+                                                   accept_threshold, preorder_id_to_topics_restrict_id)
         except tf.errors.ResourceExhaustedError as err:
-            probabilities = None
-        if probabilities is not None:
-            gc.collect()
-            has_topics_bool_mask = np.zeros(shape=len(data_topics), dtype = np.int32)
-            for k in range(tlow, thigh):
-                has_correlation_topics_in_preorder = topic_id_to_preorder_id[topics_restrict[probabilities[k, :]]]
-                has_topics_bool_mask[:] = 0
-                has_topics_bool_mask[has_correlation_topics_in_preorder] = 1
-                has_topics_int32_mask = bool_to_int32mask(has_topics_bool_mask)
-                has_topics_int32_mask = tf.repeat(tf.expand_dims(tf.constant(has_topics_int32_mask, dtype = tf.int32),
-                                                                 axis = 0), len(data_topics), axis = 0)
-                masked_result = tf.reduce_any(tf.bitwise.bitwise_and(topic_tree_mask, has_topics_int32_mask) != 0,
-                                        axis = 1)
-                content_correlations[contents_restrict[k]] = list(np.where(masked_result.numpy())[0])
+            if probabilities is not None:
+                del probabilities
+            preorder_probas = None
+        if preorder_probas is not None:
+            probas_np = preorder_probas.numpy()
+            del preorder_probas, probabilities
+            masked_result = np.zeros(shape=(len(data_topics), thigh-tlow), dtype=np.bool)
+            for k in range(len(data_topics)):
+                masked_result[k,:] = np.any(probas_np[:, topic_id_to_preorder_id[k]:topic_id_to_subtree_end[k]], axis=1)
 
+            for k in range(tlow, thigh):
+                # masked_result = graph_mask_any(res_mask[k - tlow, :], topic_tree_mask)
+                np.save(out_contents_folder+str(contents_restrict[k])+".npy", np.where(masked_result[:, k-tlow])[0].astype(dtype=np.int32))
+            del masked_result, probas_np
+
+            gc.collect()
             # if success we update
             tlow = thigh
             continuous_success += 1
@@ -198,11 +300,163 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
             continuous_success = 0
         gc.collect()
 
-    # create this by topic.
-    topic_correlations = np.empty(shape = (full_topics_data.shape[0]), dtype = "object")
-    for k in range(full_topics_data.shape[0]):
-        topic_correlations[k] = []
+    del topics_inv_map, topic_id_to_preorder_id, topic_id_to_subtree_end, preorder_id_to_topic_id
+
+    ctime2 = time.time() - ctime2
+    print("Finished generating contents-topics correlations! Time: ", ctime2)
+
+    ctime2 = time.time()
+    if out_topics_folder is not None:
+        generate_pivot_correlations(contents_restrict, out_contents_folder, out_topics_folder, len(data_topics))
+    ctime2 = time.time() - ctime2
+    print("Finished generating topics-contents correlations! Time: ", ctime2)
+
+# LEGACY buffer based method.
+"""
+def find_empty(buffer_ids):
+    empty_places = np.where(buffer_ids == -1)[0]
+    if len(empty_places) == 0:
+        return -1
+    return empty_places[0]
+
+def free_old_buffers(buffer_ids, buffer_last_access, buffer_contents, out_topics_folder, bottomk = 50):
+    smallest_last_access = np.argpartition(buffer_last_access, kth=bottomk, axis=0)[:bottomk]
+    buffer_last_access[smallest_last_access] = np.max(buffer_last_access)
+    for k in range(len(smallest_last_access)):
+        buffer_pos = smallest_last_access[k]
+        lst = buffer_contents[buffer_pos]
+        buffer_contents[buffer_pos] = None
+
+        topic_num_id = buffer_ids[buffer_pos]
+        fl = out_topics_folder + str(topic_num_id) + ".npy"
+        np.save(fl, np.array(lst, dtype=np.int32))
+        del lst
+
+    buffer_ids[smallest_last_access] = -1
+    gc.collect()
+
+def load_buffer(buffer_ids, buffer_contents, empty_idx, topic_num_id, out_topics_folder):
+    buffer_ids[empty_idx] = topic_num_id
+    fl = out_topics_folder + str(topic_num_id) + ".npy"
+    if os.path.isfile(fl):
+        buffer_contents[empty_idx] = list(np.load(fl))
+    else:
+        buffer_contents[empty_idx] = []
+
+def add_content_to_topic(content_num_id, topic_num_id, out_topics_folder,
+                         buffer_ids, buffer_last_access, buffer_contents, access_no, bottomk = 50):
+    op_idx = np.where(buffer_ids == topic_num_id)[0]
+
+    if len(op_idx) == 0:
+        empty_idx = find_empty(buffer_ids)
+        if empty_idx == -1:
+            free_old_buffers(buffer_ids, buffer_last_access, buffer_contents, out_topics_folder, bottomk = bottomk)
+            empty_idx = find_empty(buffer_ids)
+
+        load_buffer(buffer_ids, buffer_contents, empty_idx, topic_num_id, out_topics_folder)
+        op_idx = empty_idx
+    else:
+        op_idx = op_idx[0]
+
+    buffer_contents[op_idx].append(content_num_id)
+    buffer_last_access[op_idx] = access_no"""
+
+def save_chunk_data(chunk_topics, chunk_contents, out_topics_folder, saved_partitions):
+    spl = np.where(chunk_topics == -1)[0]
+
+    if len(spl) == 0:
+        sort_order = np.argsort(chunk_topics)
+        chunk_topics = chunk_topics[sort_order]
+        chunk_contents = chunk_contents[sort_order]
+    else:
+        spl = spl[0]
+        chunk_topics2 = chunk_topics[:spl]
+        chunk_contents2 = chunk_contents[:spl]
+        sort_order = np.argsort(chunk_topics2)
+        chunk_topics = chunk_topics2[sort_order]  # sort according to topics.
+        chunk_contents = chunk_contents2[sort_order]  # sort according to topics.
+
+        del chunk_topics2, chunk_contents2
+
+    topics = np.unique(chunk_topics)
+    if topics[0] == -1:
+        topics = topics[1:]
+    ls = np.searchsorted(chunk_topics, topics, side="left")
+    rs = np.searchsorted(chunk_topics, topics, side="right")
+
+    for k in range(len(topics)):
+        topic_num_id = topics[k]
+        topic_nid_folder = out_topics_folder + "topic" + str(topic_num_id) + "/"
+        curp = saved_partitions[topic_num_id]
+        if curp == 0:
+            os.mkdir(topic_nid_folder)
+        saved_partitions[topic_num_id] = curp + 1
+        np.save(topic_nid_folder + str(curp) + ".npy", chunk_contents[ls[k]:rs[k]])
+
+    del chunk_contents, chunk_topics
+
+def generate_pivot_correlations(contents_restrict, out_contents_folder, out_topics_folder,
+                                total_num_topics, chunk_size=8388608):
+    if not os.path.exists(out_topics_folder):
+        os.mkdir(out_topics_folder)
+
+    saved_partitions = np.zeros(shape=total_num_topics, dtype=np.int32)
+
+    chunk_topics = np.zeros(shape=chunk_size, dtype=np.int32)
+    chunk_contents = np.zeros(shape=chunk_size, dtype=np.int32)
+    num_chunks = 0
+
+    chunk_start = 0 # max chunk idx is chunk_size
+
+    chunk_topics[:] = -1
+    chunk_contents[:] = -1
+
+    ctime = time.time()
     for k in range(len(contents_restrict)):
-        for top_num_id in contents_restrict[k]:
-            topic_correlations[top_num_id].append(contents_restrict[k])
-    return content_correlations, topic_correlations
+        content_num_id = contents_restrict[k]
+        cors = np.load(out_contents_folder + str(content_num_id) + ".npy")
+        
+        cstart = 0
+        while cstart < len(cors):
+            clength = min(chunk_size-chunk_start, len(cors)-cstart)
+            cend = cstart + clength
+            chunk_end = chunk_start + clength
+            chunk_topics[chunk_start:chunk_end] = cors[cstart:cend]
+            chunk_contents[chunk_start:chunk_end] = content_num_id
+
+            cstart = cend
+            chunk_start = chunk_end
+
+            if chunk_end == chunk_size:
+                save_chunk_data(chunk_topics, chunk_contents, out_topics_folder, saved_partitions)
+                chunk_start = 0
+                num_chunks += 1
+                chunk_topics[:] = -1
+                chunk_contents[:] = -1
+
+        if k % 1000 == 0:
+            gc.collect()
+            ctime = time.time() - ctime
+            print("Saved contents: ", k, " out of ", len(contents_restrict), "into chunks. Time:", ctime)
+            ctime = time.time()
+
+    if (chunk_topics != -1).sum() > 0:
+        save_chunk_data(chunk_topics, chunk_contents, out_topics_folder, saved_partitions)
+        num_chunks += 1
+
+    del chunk_start, chunk_contents, chunk_topics
+
+    ctime = time.time()
+    for topic_num_id in range(total_num_topics):
+        topic_nid_folder = out_topics_folder + "topic" + str(topic_num_id) + "/"
+        if saved_partitions[topic_num_id] > 0:
+            np.save(out_topics_folder + str(topic_num_id) + ".npy",
+                np.sort(np.concatenate([np.load(topic_nid_folder + str(k) + ".npy") for k in range(saved_partitions[topic_num_id])], axis=0))
+            )
+            shutil.rmtree(topic_nid_folder)
+        if topic_num_id % 1000 == 0:
+            ctime = time.time() - ctime
+            print("Saved: ", topic_num_id, " out of ", total_num_topics, " Time:", ctime)
+            ctime = time.time()
+    del saved_partitions
+
