@@ -87,6 +87,7 @@ and so on....
 
 ### Requirements2:
 It is quite important to see whether the model does well on some kinds of data but not so well on other kinds of data. Remember we can compute the metrics for each topic:
+
 $$
 \begin{align*}
 \text{Precision}(\text{topic}) &= \frac{\text{True positive}(\text{topic})}{\text{True positive}(\text{topic}) + \text{False positive}(\text{topic})}   \\
@@ -100,11 +101,12 @@ $$\text{Tree size}(\text{topic}) = \text{Number of subtopics (including itself) 
 and obviously $\text{Tree size}(\text{topic}) \geq 1$. 
 
 Compute the following averages:
+
 $$
 \begin{align*}
-\text{Precision}(\text{lang}) &= \frac{1}{|\text{lang}|}\sum_{\text{topic} \in \text{lang}}\frac{\text{True positive}(topic)}{\text{True positive}(topic) + \text{False positive}(topic)}   \\
-\text{Precision}(\text{channel}) &= \frac{1}{|\text{channel}|}\sum_{\text{topic} \in \text{channel}} \frac{\text{True positive}(topic)}{\text{True positive}(topic) + \text{False positive}(topic)} \\
-\text{Precision}(\text{size}) &= \frac{1}{|\{\text{Tree size}(\text{topic}) = \text{size}\}|}\sum_{\text{Tree size}(\text{topic}) = \text{size}} \frac{\text{True positive}(topic)}{\text{True positive}(topic) + \text{False positive}(topic)} \\
+\text{Precision}(\text{lang}) &= \frac{1}{|\text{lang}|}\sum_{\text{topic} \in \text{lang}}\text{Precision}(\text{topic})   \\
+\text{Precision}(\text{channel}) &= \frac{1}{|\text{channel}|}\sum_{\text{topic} \in \text{channel}} \text{Precision}(\text{topic}) \\
+\text{Precision}(\text{size}) &= \frac{1}{|\{\text{Tree size}(\text{topic}) = \text{size}\}|}\text{Precision}(\text{topic}) \\
 \phantom{eeeee}\vdots & \phantom{ee}(\text{for Recall and }F_2)
 \end{align*}
 $$
