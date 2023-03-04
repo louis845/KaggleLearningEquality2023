@@ -59,6 +59,18 @@ to load the integer array into Python. The array contains all the predicted cont
 
 If you forget what the tree structure means, you can run tree_structure_visualization.py
 
+### helper_functions
+There are some helper functions to make it easier. It has the following functions:
+
+    import helper_functions
+    helper_functions.topics_inv_map  # a lookup table, given a (list of) topic string id, obtain the (list of) topic int id
+    helper_functions.contents_inv_map # same, but with contents
+    helper_functions.fast_contains  # given a SORTED INT array, check if the array contains the number
+    helper_functions.fast_contains_multi # given a SORTED INT array, and an array of numbers, returns an array of bool indicating whether the sorted array contains
+    # the number. 
+    helper_functions.train_topics_num_id # the list of topic INT ids for the training set. it is sorted
+    helper_functions.test_topics_num_id # the list of topic INT ids for the test set. it is sorted
+
 ### Requirements:
 Help compute the following metrics:
 
