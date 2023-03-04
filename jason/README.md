@@ -46,8 +46,8 @@ $$
 \text{False positive} = \text{Predicted to be true and wrong (actually false)}   \\
 \text{True negative} = \text{Predicted to be false and correct (actually false)}   \\
 \text{False negative} = \text{Predicted to be false and wrong (actually true)}   \\
-\text{Precision} = \text{\text{True positive}}{\text{True positive} + \text{False positive}}   \\
-\text{Recall} = \text{\text{True positive}}{\text{True positive} + \text{False negative}}   \\
+\text{Precision} = \frac{\text{True positive}}{\text{True positive} + \text{False positive}}   \\
+\text{Recall} = \frac{\text{True positive}}{\text{True positive} + \text{False negative}}   \\
 F_2 = 5 \cdot \frac{\text{Precision} \cdot \text{Recall}}{4 \cdot \text{Precision} + \text{Recall}}
 $$
 
