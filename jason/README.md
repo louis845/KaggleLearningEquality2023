@@ -89,9 +89,9 @@ and so on....
 It is quite important to see whether the model does well on some kinds of data but not so well on other kinds of data. Remember we can compute the metrics for each topic:
 $$
 \begin{align*}
-\text{Precision}(topic) &= \frac{\text{True positive}(topic)}{\text{True positive}(topic) + \text{False positive}(topic)}   \\
-\text{Recall}(topic) &= \frac{\text{True positive}(topic)}{\text{True positive}(topic) + \text{False negative}(topic)}   \\
-F_2(topic) &= 5 \cdot \frac{\text{Precision}(topic) \cdot \text{Recall}(topic)}{4 \cdot \text{Precision}(topic) + \text{Recall}(topic)}
+\text{Precision}(\text{topic}) &= \frac{\text{True positive}(\text{topic})}{\text{True positive}(\text{topic}) + \text{False positive}(\text{topic})}   \\
+\text{Recall}(\text{topic}) &= \frac{\text{True positive}(\text{topic})}{\text{True positive}(\text{topic}) + \text{False negative}(\text{topic})}   \\
+F_{2}(\text{topic}) &= 5 \cdot \frac{\text{Precision}(\text{topic}) \cdot \text{Recall}(\text{topic})}{4 \cdot \text{Precision}(\text{topic}) + \text{Recall}(\text{topic})}
 \end{align*}
 $$
 
