@@ -57,7 +57,7 @@ def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func =
                                    contents_one_hot_file = config.resources_path + "one_hot_languages/contents_lang_train.npy",
                                    topics_one_hot_file = config.resources_path + "one_hot_languages/topics_lang_train.npy", device = "cpu")
     print("postsampler")
-    model.compile(weight_decay = weight_decay, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.0005, decay_steps = 20000, alpha = 0.005)) # 0.0005
+    model.compile(weight_decay = weight_decay, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.0005, decay_steps = 5000, alpha = 0.005)) # 0.0005
     if custom_metrics is None:
         custom_metrics = model_bert_fix_stepup.default_metrics
     if custom_stopping_func is None:
