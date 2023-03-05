@@ -574,6 +574,12 @@ default_tree_metrics.add_tree_metric("treelv2_stringent", data_bert_sampler.defa
 default_tree_metrics.add_tree_metric("treelv3_stringent", data_bert_sampler.default_tree_sampler_instance, level = 3, sample_choice = DynamicMetrics.TEST, threshold=0.8)
 default_tree_metrics.add_tree_metric("treelv4_stringent", data_bert_sampler.default_tree_sampler_instance, level = 4, sample_choice = DynamicMetrics.TEST, threshold=0.8)
 
+default_tree_metrics.add_tree_metric("treelv0_relax", data_bert_sampler.default_tree_sampler_instance, level = 0, sample_choice = DynamicMetrics.TEST, threshold=0.65)
+default_tree_metrics.add_tree_metric("treelv1_relax", data_bert_sampler.default_tree_sampler_instance, level = 1, sample_choice = DynamicMetrics.TEST, threshold=0.65)
+default_tree_metrics.add_tree_metric("treelv2_relax", data_bert_sampler.default_tree_sampler_instance, level = 2, sample_choice = DynamicMetrics.TEST, threshold=0.65)
+default_tree_metrics.add_tree_metric("treelv3_relax", data_bert_sampler.default_tree_sampler_instance, level = 3, sample_choice = DynamicMetrics.TEST, threshold=0.65)
+default_tree_metrics.add_tree_metric("treelv4_relax", data_bert_sampler.default_tree_sampler_instance, level = 4, sample_choice = DynamicMetrics.TEST, threshold=0.65)
+
 """
 default_tree_metrics.add_tree_metric("treelv0_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 0, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
 default_tree_metrics.add_tree_metric("treelv1_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 1, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
@@ -641,7 +647,7 @@ class DefaultTreeStoppingFunc(model_bert_fix.CustomStoppingFunc):
             elif current_test_small_entropy > self.lowest_test_small_entropy * 1.3:
                 self.countdown += 1
                 if self.countdown > 50:
-                    return True
+                    return False
         else:
             current_test_small_entropy = custom_metrics.get_total_tree_metric()
             self.lowest_test_small_entropy = current_test_small_entropy

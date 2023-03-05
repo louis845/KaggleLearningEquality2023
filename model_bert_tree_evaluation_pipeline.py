@@ -224,7 +224,7 @@ def predict_contents(proba_callback, content_ids, topics_restrict, full_topics_d
 # in this case device must be GPU. for each content in contents_restrict, we compute the possible topics the contents
 # belong to.
 def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restrict, contents_restrict,
-                                      full_topics_data, full_contents_data, accept_threshold = 0.6,
+                                      full_topics_data, full_contents_data, accept_threshold = 0.7,
                                       init_batch_size = 10, init_max_batch_size = 30,
                                       out_contents_folder="contents_tree/", out_topics_folder="topics_tree/"):
     topics_restrict = np.sort(topics_restrict)
