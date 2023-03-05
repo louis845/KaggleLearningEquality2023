@@ -41,6 +41,16 @@ def compute_preorder_id(node, cur_id, topic_id_to_preorder_id, preorder_id_to_to
     node.subtree_end_id = last_id + 1
 
     topic_id_to_subtree_end[node.topic_num_id] = node.subtree_end_id
+
+    # expand it if it is too small
+    if topic_id_to_subtree_end[node.topic_num_id] - topic_id_to_preorder_id[node.topic_num_id] < 7:
+        cnode = node
+        while cnode.parent is not None:
+            cnode = cnode.parent
+            if cnode.subtree_end_id - cnode.preorder_id >= 7:
+                break
+        topic_id_to_preorder_id[node.topic_num_id] = cnode.preorder_id
+        topic_id_to_subtree_end[node.topic_num_id] = cnode.subtree_end_id
     return last_id
 
 # topics should be the pandas dataframe for topics.
