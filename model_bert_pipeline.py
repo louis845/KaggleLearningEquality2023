@@ -47,8 +47,9 @@ def train_model(model_name, custom_metrics = None, custom_stopping_func = None, 
 
     del model, training_sampler
 
-def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None, custom_tuple_choice_sampler_overshoot = None, init_noise = 0.05, weight_decay = 0.0005):
-    model = model_bert_fix_stepup.Model(units_size = 512, init_noise=init_noise)
+def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None, custom_tuple_choice_sampler_overshoot = None,
+                       init_noise_topics = 0.05, init_noise_overshoot_topics = 0.2, init_noise_contents = 0.05, init_noise_overshoot_contents = 0.2, weight_decay = 0.0005):
+    model = model_bert_fix_stepup.Model(units_size = 512, init_noise_topics = 0.05, init_noise_overshoot_topics = 0.2, init_noise_contents = 0.05, init_noise_overshoot_contents = 0.2)
     modeldir = config.training_models_path + model_name
     checkpoint_file = modeldir + "/{epoch:07d}.ckpt"
     logging_file = modeldir + "/logfile.csv"
@@ -57,7 +58,7 @@ def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func =
                                    contents_one_hot_file = config.resources_path + "one_hot_languages/contents_lang_train.npy",
                                    topics_one_hot_file = config.resources_path + "one_hot_languages/topics_lang_train.npy", device = "cpu")
     print("postsampler")
-    model.compile(weight_decay = weight_decay, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.0005, decay_steps = 5000, alpha = 0.005)) # 0.0005
+    model.compile(weight_decay = weight_decay, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.0005, decay_steps = 5000, alpha = 0.1)) # 0.0005
     if custom_metrics is None:
         custom_metrics = model_bert_fix_stepup.default_metrics
     if custom_stopping_func is None:
@@ -111,7 +112,8 @@ tuple_choice_sampler = data_bert_sampler.MixedSampler(sampler_list = [data_bert_
 metrics = model_bert_fix.obtain_overshoot_metric_instance(tuple_choice_sampler)
 train_model("overshoot23", custom_metrics = metrics, custom_tuple_choice_sampler =  tuple_choice_sampler)"""
 
-train_model_stepup("minilm12_eng_model_stepup_moreunits")
+# train_model_stepup("minilm12_eng_model_stepup_moreunits")
+train_model_stepup("minilm12_eng_model_stepup_moreunits_diffnoise", init_noise_topics=0.01, init_noise_overshoot_topics=0.04)
 
 """tuple_choice_sampler = data_bert_sampler.default_sampler_instance
 tuple_choice_sampler_overshoot = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance])
