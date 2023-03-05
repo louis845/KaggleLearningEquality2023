@@ -302,7 +302,7 @@ def obtain_topic_based_probas(proba_callback, topics_restrict, contents_restrict
                 continuous_success = 0
 
         if k % 1000 == 0:
-            print("Completed topic " + str(k) + " out of " + len(topics_restrict) + " for probabilities calculation")
+            print("Completed topic " + str(k) + " out of " + str(len(topics_restrict)) + " for probabilities calculation")
 
     # compute remaining data
     if written_into_chunks > 0:
@@ -376,5 +376,5 @@ def obtain_topk_from_probas_folder(topics_restrict, out_probs_folder,
         predictions.append(topk_preds)
 
         if k % 1000 == 0:
-            print("Completed topic " + str(k) + " out of " + len(topics_restrict) + " for topk prediction")
+            print("Completed topic " + str(k) + " out of " + str(len(topics_restrict)) + " for topk prediction")
     return predictions
