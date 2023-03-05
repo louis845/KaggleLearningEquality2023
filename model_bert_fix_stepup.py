@@ -10,7 +10,8 @@ import data_bert_sampler
 
 class Model(tf.keras.Model):
     # only the argument units_size define the shape of the model. the argument training_sampler is used for training only.
-    def __init__(self, units_size=512, init_noise_topics = 0.05, init_noise_overshoot_topics = 0.2, init_noise_contents = 0.05, init_noise_overshoot_contents = 0.2):
+    def __init__(self, units_size=512, init_noise_topics = 0.05, init_noise_overshoot_topics = 0.2, init_noise_contents = 0.05, init_noise_overshoot_contents = 0.2,
+                 init_noise_lang = 0.02, init_noise_overshoot_lang = 0.3):
         super(Model, self).__init__()
 
         self.training_sampler = None
@@ -21,6 +22,8 @@ class Model(tf.keras.Model):
         self.dropout0_feed_topics = tf.keras.layers.GaussianNoise(stddev=init_noise_topics)
         self.dropout0_contents = tf.keras.layers.GaussianNoise(stddev=init_noise_overshoot_contents)
         self.dropout0_feed_contents = tf.keras.layers.GaussianNoise(stddev=init_noise_contents)
+        self.dropout0_lang = tf.keras.layers.GaussianNoise(stddev=init_noise_overshoot_lang)
+        self.dropout0_feed_lang = tf.keras.layers.GaussianNoise(stddev=init_noise_lang)
 
         self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense1")
         self.dropout1 = tf.keras.layers.Dropout(rate=0.3)
@@ -87,16 +90,26 @@ class Model(tf.keras.Model):
             if is_ragged:
                 first_layer1_contents = tf.ragged.map_flat_values(self.dropout0_contents, contents_text_info, training=training)
                 first_layer1_topics = tf.ragged.map_flat_values(self.dropout0_topics, topics_text_info, training=training)
+                first_layer1_contents_lang = tf.ragged.map_flat_values(self.dropout0_lang, contents_lang, training=training)
+                first_layer1_topics_lang = tf.ragged.map_flat_values(self.dropout0_lang, topics_lang, training=training)
+
                 first_layer2_contents = tf.ragged.map_flat_values(self.dropout0_feed_contents, contents_text_info, training=training)
                 first_layer2_topics = tf.ragged.map_flat_values(self.dropout0_feed_topics, topics_text_info, training=training)
+                first_layer2_contents_lang = tf.ragged.map_flat_values(self.dropout0_feed_lang, contents_lang, training=training)
+                first_layer2_topics_lang = tf.ragged.map_flat_values(self.dropout0_feed_lang, topics_lang, training=training)
             else:
                 first_layer1_contents = self.dropout0_contents(contents_text_info, training=training)
                 first_layer1_topics = self.dropout0_topics(topics_text_info, training=training)
+                first_layer1_contents_lang = self.dropout0_lang(contents_lang, training=training)
+                first_layer1_topics_lang = self.dropout0_lang(topics_lang, training=training)
+
                 first_layer2_contents = self.dropout0_feed_contents(contents_text_info, training=training)
                 first_layer2_topics = self.dropout0_feed_topics(topics_text_info, training=training)
+                first_layer2_contents_lang = self.dropout0_feed_lang(contents_lang, training=training)
+                first_layer2_topics_lang = self.dropout0_feed_lang(topics_lang, training=training)
 
-            first_layer1 = tf.concat([first_layer1_contents, contents_lang, first_layer1_topics, topics_lang], axis=-1)
-            first_layer2 = tf.concat([first_layer2_contents, contents_lang, first_layer2_topics, topics_lang], axis=-1)
+            first_layer1 = tf.concat([first_layer1_contents, first_layer1_contents_lang, first_layer1_topics, first_layer1_topics_lang], axis=-1)
+            first_layer2 = tf.concat([first_layer2_contents, first_layer2_contents_lang, first_layer2_topics, first_layer2_topics_lang], axis=-1)
         else:
             first_layer1 = data
             first_layer2 = data

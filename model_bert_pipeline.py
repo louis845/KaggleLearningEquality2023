@@ -48,8 +48,11 @@ def train_model(model_name, custom_metrics = None, custom_stopping_func = None, 
     del model, training_sampler
 
 def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None, custom_tuple_choice_sampler_overshoot = None,
-                       init_noise_topics = 0.05, init_noise_overshoot_topics = 0.2, init_noise_contents = 0.05, init_noise_overshoot_contents = 0.2, weight_decay = 0.0005):
-    model = model_bert_fix_stepup.Model(units_size = 512, init_noise_topics = 0.05, init_noise_overshoot_topics = 0.2, init_noise_contents = 0.05, init_noise_overshoot_contents = 0.2)
+                       init_noise_topics = 0.05, init_noise_overshoot_topics = 0.2, init_noise_contents = 0.05, init_noise_overshoot_contents = 0.2,
+                       init_noise_lang = 0.02, init_noise_overshoot_lang = 0.3, weight_decay = 0.0005):
+    model = model_bert_fix_stepup.Model(units_size = 512, init_noise_topics = init_noise_topics, init_noise_overshoot_topics = init_noise_overshoot_topics,
+                                        init_noise_contents = init_noise_contents, init_noise_overshoot_contents = init_noise_overshoot_contents,
+                                        init_noise_lang = init_noise_lang, init_noise_overshoot_lang = init_noise_overshoot_lang)
     modeldir = config.training_models_path + model_name
     checkpoint_file = modeldir + "/{epoch:07d}.ckpt"
     logging_file = modeldir + "/logfile.csv"
