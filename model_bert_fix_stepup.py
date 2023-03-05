@@ -97,8 +97,6 @@ class Model(tf.keras.Model):
 
             first_layer1 = tf.concat([first_layer1_contents, contents_lang, first_layer1_topics, topics_lang], axis=-1)
             first_layer2 = tf.concat([first_layer2_contents, contents_lang, first_layer2_topics, topics_lang], axis=-1)
-            embedding_result = self.concat_layer(
-                [contents_description, contents_title, contents_lang, topics_description, topics_title, topics_lang])
         else:
             first_layer1 = data
             first_layer2 = data
