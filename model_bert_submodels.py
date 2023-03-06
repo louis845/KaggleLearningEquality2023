@@ -32,13 +32,13 @@ class FullyConnectedSubmodel(tf.keras.Model):
 class FullyConnectedSubmodelMiniClass(tf.keras.Model):
     def __init__(self, units_size = 512, name = "fully_con_mini"):
         super(FullyConnectedSubmodelMiniClass, self).__init__(name = name)
-        self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name=name + "fc_dense1")
+        self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name=name + "_fc_dense1")
         self.dropout1 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu", name=name + "fc_dense2")
+        self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu", name=name + "_fc_dense2")
         self.dropout2 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu", name=name + "fc_dense3")
+        self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu", name=name + "_fc_dense3")
         self.dropout3 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense_final = tf.keras.layers.Dense(units=1, activation="sigmoid", name=name + "fc_final")
+        self.dense_final = tf.keras.layers.Dense(units=1, activation="sigmoid", name=name + "_fc_final")
 
     # for training, we feed in actual_y to overdetermine the predictions. if actual_y is not fed in,
     # usual gradient descent will be used. actual_y should be a (batch_size x 2) numpy array, where
@@ -67,7 +67,8 @@ class SiameseTwinSubmodel(tf.keras.Model):
         self.right_model = FullyConnectedSubmodel(units_size=units_size // 2, name = right_name)
 
     def call(self, data, training=False):
-        return {"left": self.left_model(data["left"]), "right": self.left_model(data["right"])}
+        return {"left": self.left_model(data["left"], training=training),
+                "right": self.right_model(data["right"], training=training)}
 
     def msave_weights(self, model_folder, epoch):
         self.left_model.msave_weights(model_folder, epoch)
