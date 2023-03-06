@@ -32,6 +32,7 @@ class FullyConnectedSubmodel(tf.keras.Model):
 class FullyConnectedSubmodelMiniClass(tf.keras.Model):
     def __init__(self, units_size = 512, name = "fully_con_mini"):
         super(FullyConnectedSubmodelMiniClass, self).__init__(name = name)
+        self.sname = name
         self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name=name + "_fc_dense1")
         self.dropout1 = tf.keras.layers.Dropout(rate=0.3)
         self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu", name=name + "_fc_dense2")
