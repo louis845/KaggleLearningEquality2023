@@ -128,7 +128,7 @@ class Model(tf.keras.Model):
         overshoot_result = self.finalOvershoot(model_bert_submodels.combine_siamese_data(overshoot_fullresult), training=training)
 
         t = self.final_submodel(model_bert_submodels.concat_siamese_data(first_layer2, overshoot_fullresult), training=training)
-        t = self.final(t, training=training)
+        t = self.final(model_bert_submodels.combine_siamese_data(t), training=training)
 
         shape = first_layer1["left"].shape
         if (training and actual_y is not None and actual_y.shape[0] is not None

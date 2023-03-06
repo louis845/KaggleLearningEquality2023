@@ -21,10 +21,10 @@ class FullyConnectedSubmodel(tf.keras.Model):
     # prediction
     def call(self, data, training=False):
         t = data
-        self.dropout1(self.dense1(t), training=training)
-        self.dropout2(self.dense2(t), training=training)
-        self.dropout3(self.dense3(t), training=training)
-        self.dropout4(self.dense4(t), training=training)
+        t = self.dropout1(self.dense1(t), training=training)
+        t = self.dropout2(self.dense2(t), training=training)
+        t = self.dropout3(self.dense3(t), training=training)
+        t = self.dropout4(self.dense4(t), training=training)
         return self.dropout5(self.dense5(t), training=training)
 
     def msave_weights(self, model_folder, epoch):
@@ -46,9 +46,9 @@ class FullyConnectedSubmodelMiniClass(tf.keras.Model):
     # prediction
     def call(self, data, training=False):
         t = data
-        self.dropout1(self.dense1(t), training=training)
-        self.dropout2(self.dense2(t), training=training)
-        self.dropout3(self.dense3(t), training=training)
+        t = self.dropout1(self.dense1(t), training=training)
+        t = self.dropout2(self.dense2(t), training=training)
+        t = self.dropout3(self.dense3(t), training=training)
         return self.dense_final(t)
 
     def msave_weights(self, model_folder, epoch):
