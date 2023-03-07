@@ -29,39 +29,17 @@ class Model(tf.keras.Model):
         self.dropout0_lang = tf.keras.layers.GaussianNoise(stddev=init_noise_overshoot_lang)
         self.dropout0_feed_lang = tf.keras.layers.GaussianNoise(stddev=init_noise_lang)
 
-        self.dim_reduce_model = model_bert_submodels.SiameseTwinSubmodel(units_size=units_size, name="overshoot",
-                                                                           left_name="overshoot_left",
-                                                                           right_name="overshoot_right",
-                                                                           final_layer_size=128)
+        self.dim_reduce_model_overshoot = model_bert_submodels.SiameseTwinSmallSubmodel(units_size=units_size, name="dim_red_os",
+                                                                           left_name="dim_red_os_left",
+                                                                           right_name="dim_red_os_right",
+                                                                           final_layer_size=256)
 
-        self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense1")
-        self.dropout1 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense2 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense2")
-        self.dropout2 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense3 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense3")
-        self.dropout3 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense4 = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense4")
-        self.dropout4 = tf.keras.layers.Dropout(rate=0.3)
-        # the results of dense2 will be plugged into this.
-        self.denseOvershoot = tf.keras.layers.Dense(units=units_size, activation="relu", name="denseOvershoot")
-        self.dropoutOvershoot = tf.keras.layers.Dropout(rate=0.3)
-        self.finalOvershoot = tf.keras.layers.Dense(units=1, activation="sigmoid", name="finalOvershoot")
+        self.dim_reduce_model_final = model_bert_submodels.SiameseTwinSmallSubmodel(units_size=units_size, name="dim_red_final",
+                                                                         left_name="dim_red_final_left",
+                                                                         right_name="dim_red_final_right",
+                                                                         final_layer_size=256)
 
-        # self.dropoutCombine1 = tf.keras.layers.Dropout(rate=0.5)
-        # self.dropoutCombine2 = tf.keras.layers.Dropout(rate=0.5)
-
-        # dense1_fp takes in the combined input of dense0 and denseOvershoot
-        self.dense1_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense1_fp")
-        self.dropout1_fp = tf.keras.layers.Dropout(rate=0.3)
-        self.dense2_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense2_fp")
-        self.dropout2_fp = tf.keras.layers.Dropout(rate=0.3)
-        self.dense3_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense3_fp")
-        self.dropout3_fp = tf.keras.layers.Dropout(rate=0.3)
-        self.dense4_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense4_fp")
-        self.dropout4_fp = tf.keras.layers.Dropout(rate=0.3)
-        self.dense5_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense5_fp")
-        self.dropout5_fp = tf.keras.layers.Dropout(rate=0.3)
-        self.final = tf.keras.layers.Dense(units=1, activation="sigmoid", name="final")
+        self.stepup_submodel = model_bert_submodels.StepupSubmodel(units_size=units_size)
 
         # loss functions and eval metrics
         self.accuracy = tf.keras.metrics.BinaryAccuracy(name="accuracy")
@@ -77,82 +55,83 @@ class Model(tf.keras.Model):
         self.train_sample_generation = data_bert.obtain_train_sample
         self.train_sample_square_generation = data_bert.obtain_train_sample
 
+        self.model_folder = None
+        self.epochs = 0
+
     # for training, we feed in actual_y to overdetermine the predictions. if actual_y is not fed in,
     # usual gradient descent will be used. actual_y should be a (batch_size x 2) numpy array, where
     # the first column is for the full model prediction array, the second column for the intermediate
     # prediction
     def call(self, data, training=False, actual_y=None, final_tree_level=None):
-        if type(data) == dict:
-            contents_description = data["contents"]["description"]
-            contents_title = data["contents"]["title"]
-            contents_lang = data["contents"]["lang"]
-            topics_description = data["topics"]["description"]
-            topics_title = data["topics"]["title"]
-            topics_lang = data["topics"]["lang"]
-            # combine the (batch_size x set_size x (bert_embedding_size / num_langs)) tensors into (batch_size x set_size x (bert_embedding_size*2+num_langs+bert_embedding_size*2+num_langs))
+        # APPLY DIFFERENT NOISE to the two input layers.
+        contents_description = data["contents"]["description"]
+        contents_title = data["contents"]["title"]
+        contents_lang = data["contents"]["lang"]
+        topics_description = data["topics"]["description"]
+        topics_title = data["topics"]["title"]
+        topics_lang = data["topics"]["lang"]
+        # combine the (batch_size x set_size x (bert_embedding_size / num_langs)) tensors into (batch_size x set_size x (bert_embedding_size*2+num_langs+bert_embedding_size*2+num_langs))
 
-            contents_text_info = tf.concat([contents_description, contents_title], axis=-1)
-            topics_text_info = tf.concat([topics_description, topics_title], axis=-1)
+        contents_text_info = tf.concat([contents_description, contents_title], axis=-1)
+        topics_text_info = tf.concat([topics_description, topics_title], axis=-1)
 
-            shape = contents_description.shape
-            is_ragged = len([1 for k in range(int(shape.rank)) if shape[k] is None]) > 0
-            if is_ragged:
-                first_layer1_contents = tf.ragged.map_flat_values(self.dropout0_contents, contents_text_info,
-                                                                  training=training)
-                first_layer1_topics = tf.ragged.map_flat_values(self.dropout0_topics, topics_text_info,
-                                                                training=training)
-                first_layer1_contents_lang = tf.ragged.map_flat_values(self.dropout0_lang, contents_lang,
-                                                                       training=training)
-                first_layer1_topics_lang = tf.ragged.map_flat_values(self.dropout0_lang, topics_lang, training=training)
+        shape = contents_description.shape
+        is_ragged = len([1 for k in range(int(shape.rank)) if shape[k] is None]) > 0
+        if is_ragged:
+            first_layer1_contents = tf.ragged.map_flat_values(self.dropout0_contents, contents_text_info,
+                                                              training=training)
+            first_layer1_topics = tf.ragged.map_flat_values(self.dropout0_topics, topics_text_info,
+                                                            training=training)
+            first_layer1_contents_lang = tf.ragged.map_flat_values(self.dropout0_lang, contents_lang,
+                                                                   training=training)
+            first_layer1_topics_lang = tf.ragged.map_flat_values(self.dropout0_lang, topics_lang, training=training)
 
-                first_layer2_contents = tf.ragged.map_flat_values(self.dropout0_feed_contents, contents_text_info,
-                                                                  training=training)
-                first_layer2_topics = tf.ragged.map_flat_values(self.dropout0_feed_topics, topics_text_info,
-                                                                training=training)
-                first_layer2_contents_lang = tf.ragged.map_flat_values(self.dropout0_feed_lang, contents_lang,
-                                                                       training=training)
-                first_layer2_topics_lang = tf.ragged.map_flat_values(self.dropout0_feed_lang, topics_lang,
-                                                                     training=training)
-            else:
-                first_layer1_contents = self.dropout0_contents(contents_text_info, training=training)
-                first_layer1_topics = self.dropout0_topics(topics_text_info, training=training)
-                first_layer1_contents_lang = self.dropout0_lang(contents_lang, training=training)
-                first_layer1_topics_lang = self.dropout0_lang(topics_lang, training=training)
-
-                first_layer2_contents = self.dropout0_feed_contents(contents_text_info, training=training)
-                first_layer2_topics = self.dropout0_feed_topics(topics_text_info, training=training)
-                first_layer2_contents_lang = self.dropout0_feed_lang(contents_lang, training=training)
-                first_layer2_topics_lang = self.dropout0_feed_lang(topics_lang, training=training)
-
-            first_layer1 = tf.concat(
-                [first_layer1_contents, first_layer1_contents_lang, first_layer1_topics, first_layer1_topics_lang],
-                axis=-1)
-            first_layer2 = tf.concat(
-                [first_layer2_contents, first_layer2_contents_lang, first_layer2_topics, first_layer2_topics_lang],
-                axis=-1)
+            first_layer2_contents = tf.ragged.map_flat_values(self.dropout0_feed_contents, contents_text_info,
+                                                              training=training)
+            first_layer2_topics = tf.ragged.map_flat_values(self.dropout0_feed_topics, topics_text_info,
+                                                            training=training)
+            first_layer2_contents_lang = tf.ragged.map_flat_values(self.dropout0_feed_lang, contents_lang,
+                                                                   training=training)
+            first_layer2_topics_lang = tf.ragged.map_flat_values(self.dropout0_feed_lang, topics_lang,
+                                                                 training=training)
         else:
-            first_layer1 = data
-            first_layer2 = data
+            first_layer1_contents = self.dropout0_contents(contents_text_info, training=training)
+            first_layer1_topics = self.dropout0_topics(topics_text_info, training=training)
+            first_layer1_contents_lang = self.dropout0_lang(contents_lang, training=training)
+            first_layer1_topics_lang = self.dropout0_lang(topics_lang, training=training)
 
-        t = self.dropout1(self.dense1(first_layer1), training=training)
-        t = self.dropout2(self.dense2(t), training=training)
-        t = self.dropout3(self.dense3(t), training=training)
-        res_dropout4 = self.dropout4(self.dense4(t), training=training)
+            first_layer2_contents = self.dropout0_feed_contents(contents_text_info, training=training)
+            first_layer2_topics = self.dropout0_feed_topics(topics_text_info, training=training)
+            first_layer2_contents_lang = self.dropout0_feed_lang(contents_lang, training=training)
+            first_layer2_topics_lang = self.dropout0_feed_lang(topics_lang, training=training)
 
-        overshoot_fullresult = self.dropoutOvershoot(self.denseOvershoot(res_dropout4), training=training)
-        overshoot_result = self.finalOvershoot(overshoot_fullresult)
+        # original scheme is [contents, contents_lang, topics, topics_lang]
+        first_layer1_contents = tf.concat(
+            [first_layer1_contents, first_layer1_contents_lang],
+            axis=-1)
+        first_layer1_topics = tf.concat(
+            [first_layer1_topics, first_layer1_topics_lang],
+            axis=-1)
+        first_layer2_contents = tf.concat(
+            [first_layer2_contents, first_layer2_contents_lang],
+            axis=-1)
+        first_layer2_topics = tf.concat(
+            [first_layer2_topics, first_layer2_topics_lang],
+            axis=-1)
 
-        t = self.dropout1_fp(self.dense1_fp(tf.concat([
-            first_layer2,
-            overshoot_fullresult
-        ], axis=-1)), training=training)
-        t = self.dropout2_fp(self.dense2_fp(t), training=training)
-        t = self.dropout3_fp(self.dense3_fp(t), training=training)
-        t = self.dropout4_fp(self.dense4_fp(t), training=training)
-        t = self.dropout5_fp(self.dense5_fp(t), training=training)
-        t = self.final(t)
+        first_layer1 = {"left": first_layer1_contents,
+                        "right": first_layer1_topics}
+        first_layer2 = {"left": first_layer2_contents,
+                        "right": first_layer2_topics}
 
-        shape = first_layer1.shape
+        ovs_result = self.stepup_submodel(
+            {"first_layer1":self.dim_reduce_model_overshoot(first_layer1),
+             "first_layer2":self.dim_reduce_model_final(first_layer2)}
+            ,training=training)
+        t = ovs_result["t"]
+        overshoot_result = ovs_result["overshoot_result"]
+
+        shape = first_layer1_contents.shape
         if (training and actual_y is not None and actual_y.shape[0] is not None
                 and actual_y.shape[0] == shape[0] and final_tree_level is not None and
                 final_tree_level.shape[0] is not None and final_tree_level.shape[0] == shape[0]):
@@ -224,7 +203,9 @@ class Model(tf.keras.Model):
     #             "test_square_sample": data_bert.obtain_test_square_sample}
     def set_training_params(self, training_sample_size=15000, training_max_size=None,
                             training_sampler=None, custom_metrics=None, custom_stopping_func=None,
-                            custom_tuple_choice_sampler=None, custom_tuple_choice_sampler_overshoot=None):
+                            custom_tuple_choice_sampler=None, custom_tuple_choice_sampler_overshoot=None, model_folder = None):
+        if model_folder is None:
+            raise Exception("Must provide model folder!")
         self.training_sample_size = training_sample_size
         self.training_max_size = training_max_size
         if training_sampler is not None:
@@ -238,6 +219,7 @@ class Model(tf.keras.Model):
             self.tuple_choice_sampler = custom_tuple_choice_sampler
         if custom_tuple_choice_sampler_overshoot is not None:
             self.tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot
+        self.model_folder = model_folder
 
     def train_step_tree(self):
         for k in range(50):
@@ -337,6 +319,12 @@ class Model(tf.keras.Model):
                 "entropy_large_set": self.entropy_large_set.result(), **self.custom_metrics.obtain_metrics()}
 
     def train_step(self, data):
+        self.epochs += 1
+        if self.epochs % 10 == 0:
+            self.dim_reduce_model_overshoot.msave_weights(model_folder=self.model_folder, epoch=self.epochs)
+            self.dim_reduce_model_final.msave_weights(model_folder=self.model_folder, epoch=self.epochs)
+            self.stepup_submodel.msave_weights(model_folder=self.model_folder, epoch=self.epochs)
+
         if self.tuple_choice_sampler.is_tree_sampler():
             return self.train_step_tree()
         for k in range(50):
