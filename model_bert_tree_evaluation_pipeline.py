@@ -232,23 +232,21 @@ def predict_contents(proba_callback, content_ids, topics_restrict, full_topics_d
     return probabilities
 
 @tf.function
-def predict_contents(proba_callback, content_ids, topics_restrict, full_topics_data, full_contents_data, accept_threshold):
+def obtain_acceptances_fold(proba_callback, content_ids, topics_restrict, full_topics_data, full_contents_data, accept_threshold,
+                            len_contents, len_topics):
     contents_id = tf.repeat(content_ids, topics_restrict.shape[0])
     topics_id = tf.tile(topics_restrict, [content_ids.shape[0]])
 
     probabilities = proba_callback.predict_probabilities_with_data_return_gpu(topics_id, contents_id, full_topics_data,
                                                                    full_contents_data)
-    return probabilities
+    return tf.reshape(tf.cast(probabilities > accept_threshold, tf.int32), shape=(len_contents, len_topics))
 
 def obtain_contentwise_acceptances(proba_callback, topics_restrict, contents_restrict,
                                       full_topics_data, full_contents_data, accept_threshold = 0.7,
                                       init_batch_size = 10, init_max_batch_size = 30,
-                                      out_contents_folder="contents_probas/"):
-    topics_restrict = np.unique(topics_restrict)
-    contents_restrict = np.unique(contents_restrict)
-
-    
-
+                                      out_acceptances_folder="contents_acceptances/"):
+    if not os.path.exists(out_acceptances_folder):
+        os.mkdir(out_acceptances_folder)
     length = len(contents_restrict)
 
     batch_size = init_batch_size
@@ -258,19 +256,24 @@ def obtain_contentwise_acceptances(proba_callback, topics_restrict, contents_res
     prev_tlow = 0
     ctime = time.time()
     ctime2 = time.time()
+
+    saved_lengths = []
+    saved_num = 0
     while tlow < length:
         thigh = min(tlow + batch_size, length)
         content_ids = contents_restrict[np.arange(tlow, thigh)]
-        probabilities = None
         try:
-            probabilities = predict_contents(proba_callback, tf.constant(content_ids), tf.constant(topics_restrict),
-                                             full_topics_data,
-                                             full_contents_data)
+            acceptances = obtain_acceptances_fold(proba_callback, tf.constant(content_ids), tf.constant(topics_restrict),
+                                             full_topics_data, full_contents_data, accept_threshold, len(content_ids), len(topics_restrict))
         except tf.errors.ResourceExhaustedError as err:
-            probabilities = None
-        if probabilities is not None:
-            probabilities
-            del probabilities
+            acceptances = None
+        if acceptances is not None:
+            np.save(out_acceptances_folder + str(saved_num) + ".npy",
+                acceptances.numpy()
+            )
+            del acceptances
+            saved_num += 1
+            saved_lengths.append(thigh-tlow)
 
             gc.collect()
             # if success we update
@@ -293,6 +296,112 @@ def obtain_contentwise_acceptances(proba_callback, topics_restrict, contents_res
 
     ctime2 = time.time() - ctime2
     print("Finished generating contents-topics acceptances! Time: ", ctime2)
+    return np.array(saved_lengths, dtype=np.int32)
+
+@tf.function
+def matmul_where(mat1, mat2):
+    return tf.where(tf.transpose(tf.matmul(mat1, mat2)) > 0)
+
+def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restrict, data_topics, saved_lengths, acceptances_folder = "contents_acceptances/",
+                                                out_topics_folder = "topics_tree/"):
+    assert (topics_restrict[1:] <= topics_restrict[:-1]).sum() == 0
+    assert (contents_restrict[1:] <= contents_restrict[:-1]).sum() == 0
+    if not os.path.exists(out_topics_folder):
+        os.mkdir(out_topics_folder)
+
+    # topic_id_to_subtree_start is (inclusive) the start indices of subtree in terms of preorder id.
+    # topic_id_to_subtree_end is (exclusive) the end indices of subtree in terms of preorder id
+    topics_inv_map, topic_id_to_subtree_start, topic_id_to_subtree_end, preorder_id_to_topic_id = generate_tree_structure_information(
+        data_topics)
+
+    # this is a mapping from the preorder id to the topics restrict id (meaning preorder_id -> k, where
+    # topics_restrict[k] = (preorder_id -> topics_id)).
+    preorder_id_to_topics_restrict_id = np.zeros(shape=len(preorder_id_to_topic_id), dtype=np.int32)
+    left_side = np.searchsorted(topics_restrict, preorder_id_to_topic_id, side="left")
+    right_side = np.searchsorted(topics_restrict, preorder_id_to_topic_id, side="right")
+
+    preorder_id_to_topics_restrict_id[right_side > left_side] = left_side[right_side > left_side]
+    preorder_id_to_topics_restrict_id[right_side <= left_side] = len(topics_restrict)
+
+    # at most 2GB VRAM. the full matrix is len(topics_restrict) x len(data_topics), so we need to cut it up into pieces.
+    max_topic_chunk = 536870912 // len(topics_restrict)
+    max_contents_chunk = 536870912 // len(topics_restrict)
+
+    print("Chunk sizes: ", max_topic_chunk, " out of ", len(data_topics), "    ", max_contents_chunk, " out of ",
+          len(contents_restrict))
+
+    # we compute the tree structure correlations here
+    topic_low = 0
+
+    while topic_low < len(data_topics):
+        ctime = time.time()
+
+        topic_high = min(topic_low + max_topic_chunk, len(data_topics))
+        buffer = np.zeros(shape=(len(topics_restrict), topic_high - topic_low), dtype=np.int32)
+
+        # load info into buffer
+        for topic_num_id in range(topic_low, topic_high):
+            subtree_places = preorder_id_to_topics_restrict_id[topic_id_to_subtree_start[topic_num_id]:topic_id_to_subtree_end[topic_num_id]]
+            subtree_places = subtree_places[subtree_places != len(topics_restrict)]
+            buffer[subtree_places, topic_num_id - topic_low] = 1
+
+        topic_cors_save = np.empty(shape = topic_high - topic_low, dtype="object")
+        for k in range(topic_high - topic_low):
+            topic_cors_save[k] = []
+
+        # loop through all the contents, find the content they contain
+        completed = 0
+        completed_contents_restrict = 0
+        while completed < len(saved_lengths):
+            contents_csize = 0
+            content_load_end = completed + 1
+            while contents_csize + saved_lengths[content_load_end] < max_contents_chunk:
+                contents_csize += saved_lengths[content_load_end]
+                content_load_end += 1
+
+            cont_buffer = np.zeros(shape=(contents_csize, len(topics_restrict)),dtype=np.int32)
+            contents_csize = 0
+            for content_load in range(completed, content_load_end):
+                cont_buffer[contents_csize:contents_csize+saved_lengths[content_load], :] = np.load(acceptances_folder + str(content_load) + ".npy")
+                contents_csize += saved_lengths[content_load]
+
+            result_tf = matmul_where(tf.constant(cont_buffer), tf.constant(buffer))
+            result = result_tf.numpy()
+            del result_tf, cont_buffer
+
+            has_cor_topics = result[:, 0]
+            has_cor_contents = result[:, 1]
+            del result
+
+            for topic_num_id in range(topic_low, topic_high):
+                topic_mat = topic_num_id - topic_low
+                left = np.searchsorted(has_cor_topics, topic_mat, side="left")
+                right = np.searchsorted(has_cor_topics, topic_mat, side="right")
+
+                topic_cors_save[topic_mat].extend(list(contents_restrict[has_cor_contents[left:right] + completed_contents_restrict]))
+
+            del has_cor_contents, has_cor_topics
+            # end of searching from [completed, content_load_end)
+            completed = content_load_end
+            completed_contents_restrict += contents_csize
+
+        # save the results
+        for k in range(topic_high - topic_low):
+            if len(topic_cors_save[k]) > 0:
+                np.save(out_topics_folder + str(k + topic_low) + ".npy", np.array(topic_cors_save[k], dtype=np.int32))
+
+        # done, we move on.
+        ctime = time.time() - ctime
+        del buffer, topic_cors_save
+        gc.collect()
+
+        print("Completed topic chunk iteration", topic_low, "-", topic_high, "    Time used: ", ctime)
+        topic_low = topic_high
+
+
+    del topics_inv_map, topic_id_to_subtree_start, topic_id_to_subtree_end, preorder_id_to_topic_id, preorder_id_to_topics_restrict_id
+    shutil.rmtree(acceptances_folder)
+
 
 # in this case device must be GPU. for each content in contents_restrict, we compute the possible topics the contents
 # belong to.
@@ -352,14 +461,21 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
         if preorder_probas is not None:
             probas_np = preorder_probas.numpy()
             del preorder_probas, probabilities
+
+            ctime3 = time.time()
             masked_result = np.zeros(shape=(len(data_topics), thigh-tlow), dtype=np.bool)
             for k in range(len(data_topics)):
                 masked_result[k,:] = np.any(probas_np[:, topic_id_to_preorder_id[k]:topic_id_to_subtree_end[k]], axis=1)
+            ctime3 = time.time() - ctime3
+            print("Compute mask time:", ctime3)
 
+            ctime3 = time.time()
             for k in range(tlow, thigh):
                 # masked_result = graph_mask_any(res_mask[k - tlow, :], topic_tree_mask)
                 np.save(out_contents_folder+str(contents_restrict[k])+".npy", np.where(masked_result[:, k-tlow])[0].astype(dtype=np.int32))
             del masked_result, probas_np
+            ctime3 = time.time() - ctime3
+            print("Where save time:", ctime3)
 
             gc.collect()
             # if success we update

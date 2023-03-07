@@ -32,12 +32,12 @@ class Model(tf.keras.Model):
         self.dim_reduce_model_overshoot = model_bert_submodels.SiameseTwinSmallSubmodel(units_size=units_size, name="dim_red_os",
                                                                            left_name="dim_red_os_left",
                                                                            right_name="dim_red_os_right",
-                                                                           final_layer_size=256)
+                                                                           final_layer_size=units_size)
 
         self.dim_reduce_model_final = model_bert_submodels.SiameseTwinSmallSubmodel(units_size=units_size, name="dim_red_final",
                                                                          left_name="dim_red_final_left",
                                                                          right_name="dim_red_final_right",
-                                                                         final_layer_size=256)
+                                                                         final_layer_size=units_size)
 
         self.stepup_submodel = model_bert_submodels.StepupSubmodel(units_size=units_size)
 

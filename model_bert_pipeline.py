@@ -157,13 +157,13 @@ def train_model_stepup_dimreduce(model_name, custom_metrics = None, custom_stopp
                                    contents_one_hot_file = config.resources_path + "one_hot_languages/contents_lang_train.npy",
                                    topics_one_hot_file = config.resources_path + "one_hot_languages/topics_lang_train.npy", device = "cpu")
     print("postsampler")
-    model.compile(weight_decay = weight_decay, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.0005, decay_steps = 5000, alpha = 0.1)) # 0.0005
+    model.compile(weight_decay = weight_decay, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.0005, decay_steps = 5000, alpha = 0.1)) # 0.0005)
     if custom_metrics is None:
         custom_metrics = model_bert_fix_stepup.default_metrics
     if custom_stopping_func is None:
         custom_stopping_func = model_bert_fix_stepup.DefaultStoppingFunc(modeldir)
     model.set_training_params(9000, training_sampler = training_sampler, training_max_size = 9000, custom_metrics = custom_metrics, custom_stopping_func = custom_stopping_func,
-                              custom_tuple_choice_sampler = custom_tuple_choice_sampler, custom_tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot)
+                              custom_tuple_choice_sampler = custom_tuple_choice_sampler, custom_tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot, model_folder = modeldir)
 
     if not os.path.isdir(modeldir + "/"):
         os.mkdir(modeldir + "/")

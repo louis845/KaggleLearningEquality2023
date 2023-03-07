@@ -10,7 +10,7 @@ import tensorflow as tf
 
 class ObtainProbabilitiesCallback:
     def __init__(self):
-        pass
+        self.model = None
 
     # topics_vector, contents_vector are n x k arrays, where their k can be different (depending on model)
     # the first axis (n) is the batch_size axis, which means the prediction function predicts n probabilities
@@ -40,6 +40,14 @@ class ObtainProbabilitiesCallback:
         topics_vector = tf.gather(full_topics_vect_data, topics_id, axis=0)
         contents_vector = tf.gather(full_contents_vect_data, contents_id, axis=0)
         return self.predict_probabilities_return_gpu(tf.concat([contents_vector, topics_vector], axis=1))
+
+    def predict_probabilities_with_data_return_gpu_dimreduce(self, topics_id, contents_id, full_topics_d1,
+                                                             full_contents_d1, full_topics_d1fp, full_contents_d1fp):
+        topics_d1 = tf.gather(full_topics_d1, topics_id, axis=0)
+        contents_d1 = tf.gather(full_contents_d1, contents_id, axis=0)
+        topics_d1fp = tf.gather(full_topics_d1fp, topics_id, axis=0)
+        contents_d1fp = tf.gather(full_contents_d1fp, contents_id, axis=0)
+        return self.model.call_fast_dim_reduced(contents_d1, topics_d1, contents_d1fp, topics_d1fp)
 
 def predict_rows(proba_callback, topic_id_rows, contents_restrict, full_topics_data, full_contents_data, device):
     if device == "gpu":
@@ -200,6 +208,57 @@ def obtain_tuple_based_probas(proba_callback, topics_tuple, contents_tuple, full
             probabilities = predict_probabilities_direct_gpu(proba_callback, tf.constant(topic_ids), tf.constant(content_ids),
                                              full_topics_data,
                                              full_contents_data)
+        except tf.errors.ResourceExhaustedError as err:
+            probabilities = None
+        if probabilities is not None:
+            total_probabilities[tlow:thigh] = probabilities.numpy()
+            del probabilities
+            # if success we update
+            tlow = thigh
+            continuous_success += 1
+            if continuous_success == 3:
+                continuous_success = 0
+                batch_size = min(batch_size + 6000, max_batch_size)
+
+            if tlow - prev_tlow > print_length:
+                ctime = time.time() - ctime
+                print(tlow, "completed. out of:", length, "  batch size:", batch_size, "  time used:", ctime)
+                prev_tlow = tlow
+                ctime = time.time()
+        else:
+            batch_size = max(batch_size - 1500, 1)
+            max_batch_size = batch_size
+            continuous_success = 0
+        gc.collect()
+
+    assert len(total_probabilities) == length
+    return total_probabilities
+
+@tf.function
+def predict_probabilities_direct_gpu_stepup_dimreduce(proba_callback, topics_tuple, contents_tuple, full_topics_d1, full_contents_d1,
+                              full_topics_d1fp, full_contents_d1fp):
+    return proba_callback.predict_probabilities_with_data_return_gpu_dimreduce(topics_tuple, contents_tuple, full_topics_d1, full_contents_d1,
+                              full_topics_d1fp, full_contents_d1fp)
+def obtain_tuple_based_probas_stepup_dimreduce(proba_callback, topics_tuple, contents_tuple, full_topics_d1, full_contents_d1,
+                              full_topics_d1fp, full_contents_d1fp, batch_size=70000):
+    max_batch_size = np.inf
+    length = len(topics_tuple)
+    assert length == len(contents_tuple)
+    print_length = max(length // 50, 1)
+
+    total_probabilities = np.zeros(shape=length, dtype=np.float32)
+    tlow = 0
+    continuous_success = 0
+    prev_tlow = 0
+    ctime = time.time()
+    while tlow < length:
+        thigh = min(tlow + batch_size, length)
+        topic_ids = topics_tuple[np.arange(tlow, thigh)]
+        content_ids = contents_tuple[np.arange(tlow, thigh)]
+        try:
+            probabilities = predict_probabilities_direct_gpu_stepup_dimreduce(proba_callback, tf.constant(topic_ids), tf.constant(content_ids),
+                                                             full_topics_d1, full_contents_d1,
+                                                             full_topics_d1fp, full_contents_d1fp)
         except tf.errors.ResourceExhaustedError as err:
             probabilities = None
         if probabilities is not None:

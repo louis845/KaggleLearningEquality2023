@@ -38,10 +38,7 @@ class FullyConnectedSmallSubmodel(tf.keras.Model):
         if final_layer_size is None:
             final_layer_size = units_size
         self.sname = name
-        self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name=name + "_fc_dense1")
-        self.dropout1 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense2 = tf.keras.layers.Dense(units=final_layer_size, activation="relu", name=name + "_fc_dense2")
-        self.dropout2 = tf.keras.layers.Dropout(rate=0.3)
+        self.dense1 = tf.keras.layers.Dense(units=units_size, activation=None, use_bias=False, name=name + "_fc_dense1")
 
     # for training, we feed in actual_y to overdetermine the predictions. if actual_y is not fed in,
     # usual gradient descent will be used. actual_y should be a (batch_size x 2) numpy array, where
@@ -49,8 +46,7 @@ class FullyConnectedSmallSubmodel(tf.keras.Model):
     # prediction
     def call(self, data, training=False):
         t = data
-        t = self.dropout1(self.dense1(t), training=training)
-        return self.dropout2(self.dense2(t), training=training)
+        return self.dense1(t)
 
     def msave_weights(self, model_folder, epoch):
         self.save_weights(model_folder + "/" + str(epoch) + self.sname)
