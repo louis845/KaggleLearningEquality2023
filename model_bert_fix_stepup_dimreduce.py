@@ -35,8 +35,8 @@ class Model(tf.keras.Model):
                                                                            final_layer_size=256)
 
         self.dim_reduce_model_final = model_bert_submodels.SiameseTwinSmallSubmodel(units_size=units_size, name="dim_red_final",
-                                                                         left_name="dim_red_os_left",
-                                                                         right_name="dim_red_os_right",
+                                                                         left_name="dim_red_final_left",
+                                                                         right_name="dim_red_final_right",
                                                                          final_layer_size=256)
 
         self.stepup_submodel = model_bert_submodels.StepupSubmodel(units_size=units_size)
