@@ -187,7 +187,7 @@ def obtain_tuple_based_probas(proba_callback, topics_tuple, contents_tuple, full
     assert length == len(contents_tuple)
     print_length = max(length // 50, 1)
 
-    total_probabilities = np.zeros(shape=0, dtype=np.float32)
+    total_probabilities = np.zeros(shape=length, dtype=np.float32)
     tlow = 0
     continuous_success = 0
     prev_tlow = 0
@@ -203,15 +203,14 @@ def obtain_tuple_based_probas(proba_callback, topics_tuple, contents_tuple, full
         except tf.errors.ResourceExhaustedError as err:
             probabilities = None
         if probabilities is not None:
-            pprob = total_probabilities
-            total_probabilities = np.concatenate([pprob, probabilities.numpy()])
-            del pprob, probabilities
+            total_probabilities[tlow:thigh] = probabilities.numpy()
+            del probabilities
             # if success we update
             tlow = thigh
             continuous_success += 1
             if continuous_success == 3:
                 continuous_success = 0
-                batch_size = min(batch_size + 30000, max_batch_size)
+                batch_size = min(batch_size + 6000, max_batch_size)
 
             if tlow - prev_tlow > print_length:
                 ctime = time.time() - ctime

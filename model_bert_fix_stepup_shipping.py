@@ -60,3 +60,23 @@ class Model(tf.keras.Model):
         t = self.dropout5_fp(self.dense5_fp(t), training=training)
         t = self.final(t)
         return tf.concat([tf.reduce_max(t, axis=1), tf.reduce_max(overshoot_result, axis=1)], axis=1)
+
+    def call_nonset_final_only(self, data):
+        training = False
+        t = self.dropout1(self.dense1(data), training=training)
+        t = self.dropout2(self.dense2(t), training=training)
+        t = self.dropout3(self.dense3(t), training=training)
+        res_dropout4 = self.dropout4(self.dense4(t), training=training)
+
+        overshoot_fullresult = self.dropoutOvershoot(self.denseOvershoot(res_dropout4), training=training)
+
+        t = self.dropout1_fp(self.dense1_fp(tf.concat([
+            data,
+            overshoot_fullresult
+        ], axis=-1)), training=training)
+        t = self.dropout2_fp(self.dense2_fp(t), training=training)
+        t = self.dropout3_fp(self.dense3_fp(t), training=training)
+        t = self.dropout4_fp(self.dense4_fp(t), training=training)
+        t = self.dropout5_fp(self.dense5_fp(t), training=training)
+        t = self.final(t)
+        return tf.squeeze(t, axis=1)
