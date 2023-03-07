@@ -53,35 +53,5 @@ class Model(tf.keras.Model):
 
     # for training, we feed in actual_y to overdetermine the predictions. if actual_y is not fed in,
     # usual gradient descent will be used. actual_y should be a (batch_size) numpy vector.
-    def call(self, data, training=False, actual_y=None):
-        if type(data)==dict:
-            contents_description = data["contents"]["description"]
-            contents_title = data["contents"]["title"]
-            contents_lang = data["contents"]["lang"]
-            topics_description = data["topics"]["description"]
-            topics_title = data["topics"]["title"]
-            topics_lang = data["topics"]["lang"]
-            # combine the (batch_size x set_size x (bert_embedding_size / num_langs)) tensors into (batch_size x set_size x (bert_embedding_size*2+num_langs+bert_embedding_size*2+num_langs))
-            embedding_result = self.concat_layer(
-                [contents_description, contents_title, contents_lang, topics_description, topics_title, topics_lang])
-        else:
-            embedding_result = data
-        t = self.dropout0(embedding_result, training=training)
-        t = self.dense(t)
-        if training and actual_y is not None:  # here we use overestimation training method for the set
-            p = 4.0
-            pmean = tf.math.pow(t, p)
-            pmean = tf.reduce_mean(pmean, axis=1)
-            pmean = tf.squeeze(tf.math.pow(pmean, 1 / p), axis=1)
-
-            pinvmean = tf.math.pow(t, 1 / p)
-            pinvmean = tf.reduce_mean(pinvmean, axis=1)
-            pinvmean = tf.squeeze(tf.math.pow(pinvmean, p), axis=1)
-            # note that pmean and pinvmean are "close" to max, harmonic mean respectively.
-            # if actual_y is 1 we use the pinvmean, to encourage low prob topics to move
-            # close to 1. if actual_y is 0 we use pmean, to encourage high prob topics to
-            # move close to 0
-            proba = tf.math.add(pinvmean * tf.constant(actual_y), pmean * tf.constant(1 - actual_y))
-            return proba
-        else:  # here we just return the probabilities normally. the probability will be computed as the max inside the set
-            return tf.squeeze(tf.reduce_max(t, axis=1), axis=1)
+    def call(self, data, training=False):
+        return self.dense(self.dropout0(data, training=training))
