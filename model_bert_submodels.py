@@ -1,8 +1,10 @@
 import tensorflow as tf
 
 class FullyConnectedSubmodel(tf.keras.Model):
-    def __init__(self, units_size = 512, name = "fully_con"):
+    def __init__(self, units_size = 512, final_layer_size = None, name = "fully_con"):
         super(FullyConnectedSubmodel, self).__init__(name = name)
+        if final_layer_size is None:
+            final_layer_size = units_size
         self.sname = name
         self.dense1 = tf.keras.layers.Dense(units=units_size, activation="relu", name=name + "_fc_dense1")
         self.dropout1 = tf.keras.layers.Dropout(rate=0.3)
@@ -12,7 +14,7 @@ class FullyConnectedSubmodel(tf.keras.Model):
         self.dropout3 = tf.keras.layers.Dropout(rate=0.3)
         self.dense4 = tf.keras.layers.Dense(units=units_size, activation="relu", name=name + "_fc_dense4")
         self.dropout4 = tf.keras.layers.Dropout(rate=0.3)
-        self.dense5 = tf.keras.layers.Dense(units=units_size, activation="relu", name=name + "_fc_dense5")
+        self.dense5 = tf.keras.layers.Dense(units=final_layer_size, activation="relu", name=name + "_fc_dense5")
         self.dropout5 = tf.keras.layers.Dropout(rate=0.3)
 
     # for training, we feed in actual_y to overdetermine the predictions. if actual_y is not fed in,
@@ -62,10 +64,10 @@ def combine_siamese_data(data):
     return tf.concat([data["left"], data["right"]], axis=-1)
 
 class SiameseTwinSubmodel(tf.keras.Model):
-    def __init__(self, units_size=512, name = "sm_model", left_name = "sm_left", right_name = "sm_right"):
+    def __init__(self, units_size=512, final_layer_size = None, name = "sm_model", left_name = "sm_left", right_name = "sm_right"):
         super(SiameseTwinSubmodel, self).__init__(name = name)
-        self.left_model = FullyConnectedSubmodel(units_size=units_size // 2, name = left_name)
-        self.right_model = FullyConnectedSubmodel(units_size=units_size // 2, name = right_name)
+        self.left_model = FullyConnectedSubmodel(units_size=units_size, name = left_name, final_layer_size = final_layer_size)
+        self.right_model = FullyConnectedSubmodel(units_size=units_size, name = right_name, final_layer_size = final_layer_size)
 
     def call(self, data, training=False):
         return {"left": self.left_model(data["left"], training=training),
