@@ -55,6 +55,9 @@ class Model(tf.keras.Model):
         self.train_sample_generation = data_bert.obtain_train_sample
         self.train_sample_square_generation = data_bert.obtain_train_sample
 
+        self.model_folder = None
+        self.epochs = 0
+
     # for training, we feed in actual_y to overdetermine the predictions. if actual_y is not fed in,
     # usual gradient descent will be used. actual_y should be a (batch_size x 2) numpy array, where
     # the first column is for the full model prediction array, the second column for the intermediate
@@ -200,7 +203,9 @@ class Model(tf.keras.Model):
     #             "test_square_sample": data_bert.obtain_test_square_sample}
     def set_training_params(self, training_sample_size=15000, training_max_size=None,
                             training_sampler=None, custom_metrics=None, custom_stopping_func=None,
-                            custom_tuple_choice_sampler=None, custom_tuple_choice_sampler_overshoot=None):
+                            custom_tuple_choice_sampler=None, custom_tuple_choice_sampler_overshoot=None, model_folder = None):
+        if model_folder is None:
+            raise Exception("Must provide model folder!")
         self.training_sample_size = training_sample_size
         self.training_max_size = training_max_size
         if training_sampler is not None:
@@ -214,6 +219,7 @@ class Model(tf.keras.Model):
             self.tuple_choice_sampler = custom_tuple_choice_sampler
         if custom_tuple_choice_sampler_overshoot is not None:
             self.tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot
+        self.model_folder = model_folder
 
     def train_step_tree(self):
         for k in range(50):
@@ -313,6 +319,12 @@ class Model(tf.keras.Model):
                 "entropy_large_set": self.entropy_large_set.result(), **self.custom_metrics.obtain_metrics()}
 
     def train_step(self, data):
+        self.epochs += 1
+        if self.epochs % 10 == 0:
+            self.dim_reduce_model_overshoot.msave_weights(model_folder=self.model_folder, epoch=self.epochs)
+            self.dim_reduce_model_final.msave_weights(model_folder=self.model_folder, epoch=self.epochs)
+            self.stepup_submodel.msave_weights(model_folder=self.model_folder, epoch=self.epochs)
+
         if self.tuple_choice_sampler.is_tree_sampler():
             return self.train_step_tree()
         for k in range(50):
