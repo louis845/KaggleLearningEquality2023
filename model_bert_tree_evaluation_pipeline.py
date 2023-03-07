@@ -231,6 +231,69 @@ def predict_contents(proba_callback, content_ids, topics_restrict, full_topics_d
                                                                    full_contents_data)
     return probabilities
 
+@tf.function
+def predict_contents(proba_callback, content_ids, topics_restrict, full_topics_data, full_contents_data, accept_threshold):
+    contents_id = tf.repeat(content_ids, topics_restrict.shape[0])
+    topics_id = tf.tile(topics_restrict, [content_ids.shape[0]])
+
+    probabilities = proba_callback.predict_probabilities_with_data_return_gpu(topics_id, contents_id, full_topics_data,
+                                                                   full_contents_data)
+    return probabilities
+
+def obtain_contentwise_acceptances(proba_callback, topics_restrict, contents_restrict,
+                                      full_topics_data, full_contents_data, accept_threshold = 0.7,
+                                      init_batch_size = 10, init_max_batch_size = 30,
+                                      out_contents_folder="contents_probas/"):
+    topics_restrict = np.unique(topics_restrict)
+    contents_restrict = np.unique(contents_restrict)
+
+    
+
+    length = len(contents_restrict)
+
+    batch_size = init_batch_size
+    max_batch_size = init_max_batch_size
+    tlow = 0
+    continuous_success = 0
+    prev_tlow = 0
+    ctime = time.time()
+    ctime2 = time.time()
+    while tlow < length:
+        thigh = min(tlow + batch_size, length)
+        content_ids = contents_restrict[np.arange(tlow, thigh)]
+        probabilities = None
+        try:
+            probabilities = predict_contents(proba_callback, tf.constant(content_ids), tf.constant(topics_restrict),
+                                             full_topics_data,
+                                             full_contents_data)
+        except tf.errors.ResourceExhaustedError as err:
+            probabilities = None
+        if probabilities is not None:
+            probabilities
+            del probabilities
+
+            gc.collect()
+            # if success we update
+            tlow = thigh
+            continuous_success += 1
+            if continuous_success == 3:
+                continuous_success = 0
+                batch_size = min(batch_size + 1, max_batch_size)
+
+            if tlow - prev_tlow > 50:
+                ctime = time.time() - ctime
+                print(tlow, "completed. out of:", length, "  batch size:", batch_size, "  time used:", ctime)
+                prev_tlow = tlow
+                ctime = time.time()
+        else:
+            batch_size = max(batch_size - 1, 1)
+            max_batch_size = batch_size
+            continuous_success = 0
+        gc.collect()
+
+    ctime2 = time.time() - ctime2
+    print("Finished generating contents-topics acceptances! Time: ", ctime2)
+
 # in this case device must be GPU. for each content in contents_restrict, we compute the possible topics the contents
 # belong to.
 def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restrict, contents_restrict,
@@ -271,10 +334,17 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
         content_ids = contents_restrict[np.arange(tlow, thigh)]
         probabilities = None
         try:
+            ctime3 = time.time()
             probabilities = predict_contents(proba_callback, tf.constant(content_ids), tf.constant(topics_restrict), full_topics_data,
                                          full_contents_data)
+            ctime3 = time.time() - ctime3
+            print("Predict contents time:", ctime3)
+
+            ctime3 = time.time()
             preorder_probas = preorder_correlations_from_probabilities(probabilities, thigh-tlow, len(topics_restrict),
                                                    accept_threshold, preorder_id_to_topics_restrict_id)
+            ctime3 = time.time() - ctime3
+            print("Reorder cors time:", ctime3)
         except tf.errors.ResourceExhaustedError as err:
             if probabilities is not None:
                 del probabilities
