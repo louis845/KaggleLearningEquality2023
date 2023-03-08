@@ -238,7 +238,7 @@ def obtain_acceptances_fold(proba_callback, content_ids, topics_restrict, full_t
 
     probabilities = proba_callback.predict_probabilities_with_data_return_gpu(topics_id, contents_id, full_topics_data,
                                                                    full_contents_data)
-    return tf.squeeze(tf.where(probabilities > accept_threshold), axis=1)
+    return tf.cast(tf.squeeze(tf.where(probabilities > accept_threshold), axis=1), tf.int32)
 
 def obtain_contentwise_acceptances(proba_callback, topics_restrict, contents_restrict,
                                       full_topics_data, full_contents_data, accept_threshold = 0.7,
@@ -352,7 +352,7 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
         completed = 0
         completed_contents_restrict = 0
         while completed < len(saved_lengths):
-            contents_csize = 0
+            contents_csize = saved_lengths[completed]
             content_load_end = completed + 1
             while contents_csize + saved_lengths[content_load_end] < max_contents_chunk:
                 contents_csize += saved_lengths[content_load_end]
@@ -363,10 +363,13 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
             for content_load in range(completed, content_load_end):
                 # cont_buffer[contents_csize:contents_csize+saved_lengths[content_load], :] = np.load(acceptances_folder + str(content_load) + ".npy")
                 locs = np.load(acceptances_folder + str(content_load) + ".npy")
-                axis1 = locs // len(topics_restrict)
-                axis2 = locs % len(topics_restrict)
-                cont_buffer[contents_csize + axis1, axis2] = 1
-                del locs, axis1, axis2
+                if len(locs) > 0:
+                    axis1 = locs // len(topics_restrict)
+                    axis2 = locs % len(topics_restrict)
+                    cont_buffer[contents_csize + axis1, axis2] = 1
+                    del locs, axis1, axis2
+                else:
+                    del locs
                 contents_csize += saved_lengths[content_load]
 
             result_tf = matmul_where(tf.constant(cont_buffer), tf.constant(buffer))
