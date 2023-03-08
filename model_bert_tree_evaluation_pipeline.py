@@ -298,6 +298,73 @@ def obtain_contentwise_acceptances(proba_callback, topics_restrict, contents_res
     return np.array(saved_lengths, dtype=np.int32)
 
 @tf.function
+def obtain_acceptances_fold_dimreduce(proba_callback, content_ids, topics_restrict, full_topics_d1, full_contents_d1,
+                                      full_topics_d1fp, full_contents_d1fp, accept_threshold):
+    contents_id = tf.repeat(content_ids, topics_restrict.shape[0])
+    topics_id = tf.tile(topics_restrict, [content_ids.shape[0]])
+
+    probabilities = proba_callback.predict_probabilities_with_data_return_gpu_dimreduce(topics_id, contents_id, full_topics_d1,
+                                                                        full_contents_d1, full_topics_d1fp, full_contents_d1fp)
+    return tf.cast(tf.squeeze(tf.where(probabilities > accept_threshold), axis=1), tf.int32)
+
+def obtain_contentwise_acceptances_dimreduce(proba_callback, topics_restrict, contents_restrict,
+                                      full_topics_d1, full_contents_d1, full_topics_d1fp, full_contents_d1fp,
+                                      accept_threshold = 0.7, init_batch_size = 10, init_max_batch_size = 30,
+                                      out_acceptances_folder="contents_acceptances/"):
+    if not os.path.exists(out_acceptances_folder):
+        os.mkdir(out_acceptances_folder)
+    length = len(contents_restrict)
+
+    batch_size = init_batch_size
+    max_batch_size = init_max_batch_size
+    tlow = 0
+    continuous_success = 0
+    prev_tlow = 0
+    ctime = time.time()
+    ctime2 = time.time()
+
+    saved_lengths = []
+    saved_num = 0
+    while tlow < length:
+        thigh = min(tlow + batch_size, length)
+        content_ids = contents_restrict[np.arange(tlow, thigh)]
+        try:
+            acceptances = obtain_acceptances_fold_dimreduce(proba_callback, tf.constant(content_ids), tf.constant(topics_restrict),
+                                             full_topics_d1, full_contents_d1, full_topics_d1fp, full_contents_d1fp, accept_threshold)
+        except tf.errors.ResourceExhaustedError as err:
+            acceptances = None
+        if acceptances is not None:
+            np.save(out_acceptances_folder + str(saved_num) + ".npy",
+                acceptances.numpy()
+            )
+            del acceptances
+            saved_num += 1
+            saved_lengths.append(thigh-tlow)
+
+            gc.collect()
+            # if success we update
+            tlow = thigh
+            continuous_success += 1
+            if continuous_success == 3:
+                continuous_success = 0
+                batch_size = min(batch_size + 1, max_batch_size)
+
+            if tlow - prev_tlow > 50:
+                ctime = time.time() - ctime
+                print(tlow, "completed. out of:", length, "  batch size:", batch_size, "  time used:", ctime)
+                prev_tlow = tlow
+                ctime = time.time()
+        else:
+            batch_size = max(batch_size - 1, 1)
+            max_batch_size = batch_size
+            continuous_success = 0
+        gc.collect()
+
+    ctime2 = time.time() - ctime2
+    print("Finished generating contents-topics acceptances! Time: ", ctime2)
+    return np.array(saved_lengths, dtype=np.int32)
+
+@tf.function
 def matmul_where(mat1, mat2):
     return tf.cast(tf.where(tf.linalg.matmul(mat2, mat1, transpose_a=True, transpose_b=True) > 0.9), dtype=tf.int32)
 
@@ -340,14 +407,11 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
         topic_high = min(topic_low + max_topic_chunk, len(data_topics))
         buffer = np.zeros(shape=(len(topics_restrict), topic_high - topic_low), dtype=np.float32)
 
-        ctime2 = time.time()
         # load info into buffer
         for topic_num_id in range(topic_low, topic_high):
             subtree_places = preorder_id_to_topics_restrict_id[topic_id_to_subtree_start[topic_num_id]:topic_id_to_subtree_end[topic_num_id]]
             subtree_places = subtree_places[subtree_places != len(topics_restrict)]
             buffer[subtree_places, topic_num_id - topic_low] = 1.0
-        ctime2 = time.time() - ctime2
-        print("Saved tree info: ", ctime2)
 
         # loop through all the contents, find the content they contain
         completed = 0
@@ -359,8 +423,6 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
                 contents_csize += saved_lengths[content_load_end]
                 content_load_end += 1
 
-            print("Loading contents into buffer..... (", completed, ")")
-            ctime2 = time.time()
             cont_buffer = np.full(shape=(contents_csize, len(topics_restrict)), fill_value=-1.490116119384765625e-8, dtype=np.float32)
             contents_csize = 0
             for content_load in range(completed, content_load_end):
@@ -375,11 +437,6 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
                     del locs
                 contents_csize += saved_lengths[content_load]
 
-            ctime2 = time.time() - ctime2
-            print("Loaded contents into buffer: ", ctime2)
-
-            print("Matrix multiplication: ", cont_buffer.shape, "    ", buffer.shape)
-            ctime2 = time.time()
             result_tf = matmul_where(tf.constant(cont_buffer), tf.constant(buffer))
             result = result_tf.numpy()
             del result_tf, cont_buffer
@@ -387,11 +444,7 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
             has_cor_topics = result[:, 0]
             has_cor_contents = result[:, 1]
             del result
-            ctime2 = time.time() - ctime2
-            print("Finished multiplication:", ctime2)
 
-            print("Start extending established arrays")
-            ctime2 = time.time()
             topic_mats = np.unique(has_cor_topics)
             left = np.searchsorted(has_cor_topics, topic_mats, side="left")
             right = np.searchsorted(has_cor_topics, topic_mats, side="right")
@@ -407,8 +460,7 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
                     os.mkdir(topic_nid_folder)
                 saved_partitions[topic_num_id] = curp + 1
                 np.save(topic_nid_folder + str(curp) + ".npy", contents_restrict[has_cor_contents[left[k]:right[k]] + completed_contents_restrict])
-            ctime2 = time.time() - ctime2
-            print("Finished extending established arrays", ctime2)
+            
 
             del has_cor_contents, has_cor_topics, left, right, topic_mats
             # end of searching from [completed, content_load_end)

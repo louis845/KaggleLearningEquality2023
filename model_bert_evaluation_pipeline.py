@@ -385,6 +385,108 @@ def obtain_topic_based_probas(proba_callback, topics_restrict, contents_restrict
     gc.collect()
     return total_probas_write
 
+@tf.function
+def predict_probabilities_direct_gpu2_stepup_dimreduce(proba_callback, topics_tuple, contents_tuple, full_topics_d1, full_contents_d1,
+                              full_topics_d1fp, full_contents_d1fp):
+    return proba_callback.predict_probabilities_with_data_return_gpu_dimreduce(topics_tuple, contents_tuple, full_topics_d1, full_contents_d1,
+                              full_topics_d1fp, full_contents_d1fp)
+
+# the chunk is used for buffering. the batch size is dynamic, but it will be always be < chunk size.
+def obtain_topic_based_probas_stepup_dimreduce(proba_callback, topics_restrict, contents_restrict, topics_folder, out_probs_folder,
+                                               full_topics_d1, full_contents_d1, full_topics_d1fp, full_contents_d1fp, batch_size=70000, chunk_size=8388608):
+    assert os.path.exists(topics_folder)
+    topics_restrict = np.unique(topics_restrict)
+    contents_restrict = np.unique(contents_restrict)
+    if not os.path.exists(out_probs_folder):
+        os.mkdir(out_probs_folder)
+
+    max_batch_size = chunk_size
+    continuous_success = 0
+
+    topics_tuple_chunk = np.zeros(shape=chunk_size, dtype=np.int32) # buffers
+    contents_tuple_chunk = np.zeros(shape=chunk_size, dtype=np.int32) # buffers
+
+    written_into_chunks = 0
+
+    total_probas_write = 0
+
+    for k in range(len(topics_restrict)):
+        topic_num_id = topics_restrict[k]
+        if os.path.isfile(topics_folder + str(topic_num_id) + ".npy"):
+            # has corr, we compute the probas for all.
+            content_num_ids = np.load(topics_folder + str(topic_num_id) + ".npy")
+        else:
+            # no corr, we compute all
+            content_num_ids = contents_restrict
+        # write into chunk
+        topics_tuple_chunk[written_into_chunks:written_into_chunks + len(content_num_ids)] = topic_num_id
+        contents_tuple_chunk[written_into_chunks:written_into_chunks + len(content_num_ids)] = content_num_ids
+        written_into_chunks = written_into_chunks + len(content_num_ids)
+
+        # use model to predict here
+        while written_into_chunks >= batch_size:
+            topics_pred_id = topics_tuple_chunk[:batch_size]
+            contents_pred_id = contents_tuple_chunk[:batch_size]
+            try:
+                probabilities = predict_probabilities_direct_gpu2(proba_callback, tf.constant(topics_pred_id),
+                                                                  tf.constant(contents_pred_id),
+                                                                  full_topics_data, full_contents_data)
+            except tf.errors.ResourceExhaustedError as err:
+                probabilities = None
+            if probabilities is not None:
+                probabilities_np = probabilities.numpy()
+                np.save(out_probs_folder + str(total_probas_write) + "_topics.npy", topics_pred_id)
+                np.save(out_probs_folder + str(total_probas_write) + "_contents.npy", contents_pred_id)
+                np.save(out_probs_folder + str(total_probas_write) + "_probas.npy", probabilities_np)
+                del probabilities, probabilities_np
+                total_probas_write += 1
+
+                if written_into_chunks > batch_size:
+                    topics_tuple_pending = topics_tuple_chunk[batch_size:written_into_chunks]
+                    contents_tuple_pending = contents_tuple_chunk[batch_size:written_into_chunks]
+                    written_into_chunks = written_into_chunks - batch_size
+                    topics_tuple_chunk[:written_into_chunks] = topics_tuple_pending
+                    contents_tuple_chunk[:written_into_chunks] = contents_tuple_pending
+                else:
+                    written_into_chunks = 0
+
+                gc.collect()
+                # if success we update
+                continuous_success += 1
+                if continuous_success == 3:
+                    continuous_success = 0
+                    batch_size = min(batch_size + 30000, max_batch_size)
+            else:
+                batch_size = max(batch_size - 1500, 1)
+                max_batch_size = batch_size
+                continuous_success = 0
+
+        if k % 1000 == 0:
+            print("Completed topic " + str(k) + " out of " + str(len(topics_restrict)) + " for probabilities calculation")
+
+    # compute remaining data
+    if written_into_chunks > 0:
+        tlow = 0
+        while tlow < written_into_chunks:
+            thigh = min(tlow + batch_size, written_into_chunks)
+            topics_pred_id = topics_tuple_chunk[tlow:thigh]
+            contents_pred_id = contents_tuple_chunk[tlow:thigh]
+            probabilities = predict_probabilities_direct_gpu2_stepup_dimreduce(proba_callback, tf.constant(topics_pred_id),
+                                                              tf.constant(contents_pred_id),
+                                                              full_topics_d1, full_contents_d1, full_topics_d1fp, full_contents_d1fp)
+            probabilities_np = probabilities.numpy()
+            del probabilities
+
+            np.save(out_probs_folder + str(total_probas_write) + "_topics.npy", topics_pred_id)
+            np.save(out_probs_folder + str(total_probas_write) + "_contents.npy", contents_pred_id)
+            np.save(out_probs_folder + str(total_probas_write) + "_probas.npy", probabilities_np)
+            del probabilities_np, topics_pred_id, contents_pred_id
+            total_probas_write += 1
+            tlow = thigh
+    del topics_tuple_chunk, contents_tuple_chunk
+    gc.collect()
+    return total_probas_write
+
 def obtain_topk_from_probas_folder(topics_restrict, out_probs_folder,
                               total_probas_write, topk = 30):
     next_file = 1
