@@ -299,7 +299,7 @@ def obtain_contentwise_acceptances(proba_callback, topics_restrict, contents_res
 
 @tf.function
 def matmul_where(mat1, mat2):
-    return tf.where(tf.transpose(tf.matmul(mat1, mat2)) > 0)
+    return tf.cast(tf.where(tf.linalg.matmul(mat2, mat1, transpose_a=True, transpose_b=True) > 0.9), dtype=tf.int32)
 
 def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restrict, data_topics, saved_lengths, acceptances_folder = "contents_acceptances/",
                                                 out_topics_folder = "topics_tree/"):
@@ -331,22 +331,23 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
 
     # we compute the tree structure correlations here
     topic_low = 0
+    saved_partitions = np.zeros(shape=(len(data_topics)), dtype=np.int32)
 
     while topic_low < len(data_topics):
+        print("Running ", topic_low)
         ctime = time.time()
 
         topic_high = min(topic_low + max_topic_chunk, len(data_topics))
-        buffer = np.zeros(shape=(len(topics_restrict), topic_high - topic_low), dtype=np.int32)
+        buffer = np.zeros(shape=(len(topics_restrict), topic_high - topic_low), dtype=np.float32)
 
+        ctime2 = time.time()
         # load info into buffer
         for topic_num_id in range(topic_low, topic_high):
             subtree_places = preorder_id_to_topics_restrict_id[topic_id_to_subtree_start[topic_num_id]:topic_id_to_subtree_end[topic_num_id]]
             subtree_places = subtree_places[subtree_places != len(topics_restrict)]
-            buffer[subtree_places, topic_num_id - topic_low] = 1
-
-        topic_cors_save = np.empty(shape = topic_high - topic_low, dtype="object")
-        for k in range(topic_high - topic_low):
-            topic_cors_save[k] = []
+            buffer[subtree_places, topic_num_id - topic_low] = 1.0
+        ctime2 = time.time() - ctime2
+        print("Saved tree info: ", ctime2)
 
         # loop through all the contents, find the content they contain
         completed = 0
@@ -354,11 +355,13 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
         while completed < len(saved_lengths):
             contents_csize = saved_lengths[completed]
             content_load_end = completed + 1
-            while contents_csize + saved_lengths[content_load_end] < max_contents_chunk:
+            while (content_load_end < len(saved_lengths)) and (contents_csize + saved_lengths[content_load_end] < max_contents_chunk):
                 contents_csize += saved_lengths[content_load_end]
                 content_load_end += 1
 
-            cont_buffer = np.zeros(shape=(contents_csize, len(topics_restrict)),dtype=np.int32)
+            print("Loading contents into buffer..... (", completed, ")")
+            ctime2 = time.time()
+            cont_buffer = np.full(shape=(contents_csize, len(topics_restrict)), fill_value=-1.490116119384765625e-8, dtype=np.float32)
             contents_csize = 0
             for content_load in range(completed, content_load_end):
                 # cont_buffer[contents_csize:contents_csize+saved_lengths[content_load], :] = np.load(acceptances_folder + str(content_load) + ".npy")
@@ -366,12 +369,17 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
                 if len(locs) > 0:
                     axis1 = locs // len(topics_restrict)
                     axis2 = locs % len(topics_restrict)
-                    cont_buffer[contents_csize + axis1, axis2] = 1
+                    cont_buffer[contents_csize + axis1, axis2] = 1.0
                     del locs, axis1, axis2
                 else:
                     del locs
                 contents_csize += saved_lengths[content_load]
 
+            ctime2 = time.time() - ctime2
+            print("Loaded contents into buffer: ", ctime2)
+
+            print("Matrix multiplication: ", cont_buffer.shape, "    ", buffer.shape)
+            ctime2 = time.time()
             result_tf = matmul_where(tf.constant(cont_buffer), tf.constant(buffer))
             result = result_tf.numpy()
             del result_tf, cont_buffer
@@ -379,28 +387,38 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
             has_cor_topics = result[:, 0]
             has_cor_contents = result[:, 1]
             del result
+            ctime2 = time.time() - ctime2
+            print("Finished multiplication:", ctime2)
 
-            for topic_num_id in range(topic_low, topic_high):
-                topic_mat = topic_num_id - topic_low
-                left = np.searchsorted(has_cor_topics, topic_mat, side="left")
-                right = np.searchsorted(has_cor_topics, topic_mat, side="right")
+            print("Start extending established arrays")
+            ctime2 = time.time()
+            topic_mats = np.unique(has_cor_topics)
+            left = np.searchsorted(has_cor_topics, topic_mats, side="left")
+            right = np.searchsorted(has_cor_topics, topic_mats, side="right")
 
-                topic_cors_save[topic_mat].extend(list(contents_restrict[has_cor_contents[left:right] + completed_contents_restrict]))
+            print("Length: ", len(topic_mats))
+            for k in range(len(topic_mats)):
+                topic_mat = topic_mats[k]
 
-            del has_cor_contents, has_cor_topics
+                topic_num_id = topic_mat + topic_low
+                topic_nid_folder = out_topics_folder + "topic" + str(topic_num_id) + "/"
+                curp = saved_partitions[topic_num_id]
+                if curp == 0:
+                    os.mkdir(topic_nid_folder)
+                saved_partitions[topic_num_id] = curp + 1
+                np.save(topic_nid_folder + str(curp) + ".npy", contents_restrict[has_cor_contents[left[k]:right[k]] + completed_contents_restrict])
+            ctime2 = time.time() - ctime2
+            print("Finished extending established arrays", ctime2)
+
+            del has_cor_contents, has_cor_topics, left, right, topic_mats
             # end of searching from [completed, content_load_end)
             completed = content_load_end
             completed_contents_restrict += contents_csize
-
-        # save the results
-        for k in range(topic_high - topic_low):
-            if len(topic_cors_save[k]) > 0:
-                np.save(out_topics_folder + str(k + topic_low) + ".npy", np.array(topic_cors_save[k], dtype=np.int32))
+            gc.collect()
 
         # done, we move on.
         ctime = time.time() - ctime
-        del buffer, topic_cors_save
-        gc.collect()
+        del buffer
 
         print("Completed topic chunk iteration", topic_low, "-", topic_high, "    Time used: ", ctime)
         topic_low = topic_high
@@ -408,6 +426,21 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
 
     del topics_inv_map, topic_id_to_subtree_start, topic_id_to_subtree_end, preorder_id_to_topic_id, preorder_id_to_topics_restrict_id
     shutil.rmtree(acceptances_folder)
+
+    ctime = time.time()
+    for topic_num_id in range(len(data_topics)):
+        topic_nid_folder = out_topics_folder + "topic" + str(topic_num_id) + "/"
+        if saved_partitions[topic_num_id] > 0:
+            np.save(out_topics_folder + str(topic_num_id) + ".npy",
+                    np.sort(np.concatenate(
+                        [np.load(topic_nid_folder + str(k) + ".npy") for k in range(saved_partitions[topic_num_id])],
+                        axis=0))
+                    )
+            shutil.rmtree(topic_nid_folder)
+        if topic_num_id % 1000 == 0:
+            ctime = time.time() - ctime
+            print("Combined: ", topic_num_id, " out of ", len(data_topics), " Time:", ctime)
+            ctime = time.time()
 
 
 # in this case device must be GPU. for each content in contents_restrict, we compute the possible topics the contents
