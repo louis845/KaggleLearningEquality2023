@@ -232,8 +232,7 @@ def predict_contents(proba_callback, content_ids, topics_restrict, full_topics_d
     return probabilities
 
 @tf.function
-def obtain_acceptances_fold(proba_callback, content_ids, topics_restrict, full_topics_data, full_contents_data, accept_threshold,
-                            len_contents, len_topics):
+def obtain_acceptances_fold(proba_callback, content_ids, topics_restrict, full_topics_data, full_contents_data, accept_threshold):
     contents_id = tf.repeat(content_ids, topics_restrict.shape[0])
     topics_id = tf.tile(topics_restrict, [content_ids.shape[0]])
 

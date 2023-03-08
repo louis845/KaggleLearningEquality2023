@@ -54,4 +54,4 @@ class Model(tf.keras.Model):
     # for training, we feed in actual_y to overdetermine the predictions. if actual_y is not fed in,
     # usual gradient descent will be used. actual_y should be a (batch_size) numpy vector.
     def call(self, data, training=False):
-        return self.dense(self.dropout0(data, training=training))
+        return tf.squeeze(self.dense(self.dropout0(data, training=training)), axis=1)

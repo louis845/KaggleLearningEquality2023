@@ -126,13 +126,14 @@ class Model(tf.keras.Model):
         return tf.matmul(data, self.dense1_fp_right_matrix)
 
     def call_fast_dim_reduced(self, left_d1, right_d1, left_d1fp, right_d1fp):
-        t = tf.nn.bias_add(left_d1 + right_d1, self.dense1.weights[1])
+        t = tf.nn.relu(tf.nn.bias_add(left_d1 + right_d1, self.dense1.weights[1]))
         t = self.dense2(t)
         t = self.dense3(t)
         res_dropout4 = self.dense4(t)
         overshoot_fullresult = self.denseOvershoot(res_dropout4)
 
-        t = tf.nn.bias_add(left_d1fp + right_d1fp + tf.matmul(overshoot_fullresult, self.dense1_fp_residual_matrix), self.dense1_fp.weights[1])
+        t = tf.nn.relu(tf.nn.bias_add(left_d1fp + right_d1fp +
+                           tf.matmul(overshoot_fullresult, self.dense1_fp_residual_matrix),self.dense1_fp.weights[1]))
         t = self.dense2_fp(t)
         t = self.dense3_fp(t)
         t = self.dense4_fp(t)
