@@ -550,3 +550,66 @@ def obtain_topk_from_probas_folder(topics_restrict, out_probs_folder,
         if k % 1000 == 0:
             print("Completed topic " + str(k) + " out of " + str(len(topics_restrict)) + " for topk prediction")
     return predictions
+
+
+def obtain_multiple_topk_from_probas_folder(topics_restrict, out_probs_folder, total_probas_write, topk_multiple):
+    next_file = 1
+    topics_pred_ids = np.load(out_probs_folder + str(0) + "_topics.npy")
+    contents_pred_ids = np.load(out_probs_folder + str(0) + "_contents.npy")
+    probas = np.load(out_probs_folder + str(0) + "_probas.npy")
+
+    # for each topk val, save the topk predictions.
+    predictions = {}
+    for k in topk_multiple:
+        predictions[k] = []
+
+    for k in range(len(topics_restrict)):
+        topic_num_id = topics_restrict[k]
+        left = np.searchsorted(topics_pred_ids, topic_num_id, side="left")
+        right = np.searchsorted(topics_pred_ids, topic_num_id, side="right")
+        if right == left:
+            topics_pred_ids = np.load(out_probs_folder + str(next_file) + "_topics.npy")
+            contents_pred_ids = np.load(out_probs_folder + str(next_file) + "_contents.npy")
+            probas = np.load(out_probs_folder + str(next_file) + "_probas.npy")
+            next_file += 1
+            left = np.searchsorted(topics_pred_ids, topic_num_id, side="left")
+            right = np.searchsorted(topics_pred_ids, topic_num_id, side="right")
+
+            current_content_ids = contents_pred_ids[left:right]
+            current_probas = probas[left:right]
+        else:
+            current_content_ids = contents_pred_ids[left:right]
+            current_probas = probas[left:right]
+
+        while right == len(probas) and next_file < total_probas_write:
+            topics_pred_ids = np.load(out_probs_folder + str(next_file) + "_topics.npy")
+            contents_pred_ids = np.load(out_probs_folder + str(next_file) + "_contents.npy")
+            probas = np.load(out_probs_folder + str(next_file) + "_probas.npy")
+            next_file += 1
+
+            left = np.searchsorted(topics_pred_ids, topic_num_id, side="left")
+            right = np.searchsorted(topics_pred_ids, topic_num_id, side="right")
+
+            current_content_ids = np.concatenate([current_content_ids, contents_pred_ids[left:right]], axis=0)
+            current_probas = np.concatenate([current_probas, probas[left:right]], axis=0)
+
+        topk = np.max(topk_multiple)
+        if topk < len(current_content_ids):
+            idx = np.argpartition(current_probas, -topk)[-topk:]
+
+            topk_probas = current_probas[idx]
+            topk_preds = current_content_ids[idx]
+        else:
+            topk_probas = current_probas
+            topk_preds = current_content_ids
+
+        idx = np.argsort(topk_probas)
+        for topk_spec in topk_multiple:
+            if topk_spec < len(topk_preds):
+                predictions[topk_spec].append(topk_preds[idx[-topk_spec:]])
+            else:
+                predictions[topk_spec].append(topk_preds)
+
+        if k % 1000 == 0:
+            print("Completed topic " + str(k) + " out of " + str(len(topics_restrict)) + " for topk prediction")
+    return predictions
