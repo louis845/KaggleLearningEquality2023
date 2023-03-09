@@ -580,6 +580,27 @@ default_tree_metrics.add_tree_metric("treelv2_relax", data_bert_sampler.default_
 default_tree_metrics.add_tree_metric("treelv3_relax", data_bert_sampler.default_tree_sampler_instance, level = 3, sample_choice = DynamicMetrics.TEST, threshold=0.65)
 default_tree_metrics.add_tree_metric("treelv4_relax", data_bert_sampler.default_tree_sampler_instance, level = 4, sample_choice = DynamicMetrics.TEST, threshold=0.65)
 
+default_reversed_tree_metrics = DynamicMetrics()
+default_reversed_tree_metrics.add_metric("test", data_bert_sampler.default_reversed_sampler_instance, data_bert_sampler.default_reversed_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST)
+default_reversed_tree_metrics.add_metric("test_square", data_bert_sampler.default_reversed_sampler_instance, data_bert_sampler.default_reversed_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
+default_reversed_tree_metrics.add_metric("test_overshoot", data_bert_sampler.default_reversed_sampler_instance, data_bert_sampler.default_reversed_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
+default_reversed_tree_metrics.add_tree_metric("treelv0", data_bert_sampler.default_reversed_tree_sampler, level = 0, sample_choice = DynamicMetrics.TEST)
+default_reversed_tree_metrics.add_tree_metric("treelv1", data_bert_sampler.default_reversed_tree_sampler, level = 1, sample_choice = DynamicMetrics.TEST)
+default_reversed_tree_metrics.add_tree_metric("treelv2", data_bert_sampler.default_reversed_tree_sampler, level = 2, sample_choice = DynamicMetrics.TEST)
+default_reversed_tree_metrics.add_tree_metric("treelv3", data_bert_sampler.default_reversed_tree_sampler, level = 3, sample_choice = DynamicMetrics.TEST)
+default_reversed_tree_metrics.add_tree_metric("treelv4", data_bert_sampler.default_reversed_tree_sampler, level = 4, sample_choice = DynamicMetrics.TEST)
+default_reversed_tree_metrics.add_tree_metric("treelv0_stringent", data_bert_sampler.default_reversed_tree_sampler, level = 0, sample_choice = DynamicMetrics.TEST, threshold=0.8)
+default_reversed_tree_metrics.add_tree_metric("treelv1_stringent", data_bert_sampler.default_reversed_tree_sampler, level = 1, sample_choice = DynamicMetrics.TEST, threshold=0.8)
+default_reversed_tree_metrics.add_tree_metric("treelv2_stringent", data_bert_sampler.default_reversed_tree_sampler, level = 2, sample_choice = DynamicMetrics.TEST, threshold=0.8)
+default_reversed_tree_metrics.add_tree_metric("treelv3_stringent", data_bert_sampler.default_reversed_tree_sampler, level = 3, sample_choice = DynamicMetrics.TEST, threshold=0.8)
+default_reversed_tree_metrics.add_tree_metric("treelv4_stringent", data_bert_sampler.default_reversed_tree_sampler, level = 4, sample_choice = DynamicMetrics.TEST, threshold=0.8)
+
+default_reversed_tree_metrics.add_tree_metric("treelv0_relax", data_bert_sampler.default_reversed_tree_sampler, level = 0, sample_choice = DynamicMetrics.TEST, threshold=0.65)
+default_reversed_tree_metrics.add_tree_metric("treelv1_relax", data_bert_sampler.default_reversed_tree_sampler, level = 1, sample_choice = DynamicMetrics.TEST, threshold=0.65)
+default_reversed_tree_metrics.add_tree_metric("treelv2_relax", data_bert_sampler.default_reversed_tree_sampler, level = 2, sample_choice = DynamicMetrics.TEST, threshold=0.65)
+default_reversed_tree_metrics.add_tree_metric("treelv3_relax", data_bert_sampler.default_reversed_tree_sampler, level = 3, sample_choice = DynamicMetrics.TEST, threshold=0.65)
+default_reversed_tree_metrics.add_tree_metric("treelv4_relax", data_bert_sampler.default_reversed_tree_sampler, level = 4, sample_choice = DynamicMetrics.TEST, threshold=0.65)
+
 """
 default_tree_metrics.add_tree_metric("treelv0_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 0, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
 default_tree_metrics.add_tree_metric("treelv1_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 1, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
