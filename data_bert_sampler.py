@@ -380,6 +380,61 @@ class DefaultTreeSampler(SamplerBase):
     def is_tree_sampler(self):
         return True
 
+class ReversedTreeSampler(SamplerBase):
+    # tree sampler, but reverses train and test sets.
+    def __init__(self, tree_sampler):
+        self.tree_sampler = self.tree_sampler
+
+    def obtain_train_sample(self, sample_size):
+        return self.tree_sampler.obtain_test_sample(sample_size)
+
+    # returns a sequence o 6-tuples, topics_num_id, contents_num_id, correlations,
+    # classes, tree_levels, abundance_multipliers
+
+    # the number of tree tcs are always square and of fixed size. the sample_size argument below
+    # controls the size of the fine grained samples.
+    def obtain_test_sample(self, sample_size):
+        return self.tree_sampler.obtain_train_sample(sample_size)
+
+    def obtain_train_notree_sample(self, sample_size):
+        return self.tree_sampler.obtain_test_notree_sample(sample_size)
+
+    def obtain_test_notree_sample(self, sample_size):
+        return self.tree_sampler.obtain_train_notree_sample(sample_size)
+
+    def obtain_train_square_sample(self, sample_size):
+        raise Exception("This function is not supported for tree samplers.")
+
+    # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
+    def obtain_test_square_sample(self, sample_size):
+        raise Exception("This function is not supported for tree samplers.")
+
+    def obtain_tree_train_sample(self, sample_size, level):
+        return self.tree_sampler.obtain_tree_test_sample(sample_size, level)
+
+    def obtain_tree_test_sample(self, sample_size, level):
+        return self.tree_sampler.obtain_tree_train_sample(sample_size, level)
+
+    def obtain_tree_train_square_sample(self, sample_size, level):
+        return self.tree_sampler.obtain_tree_test_square_sample(sample_size, level)
+
+    def obtain_tree_test_square_sample(self, sample_size, level):
+        return self.tree_sampler.obtain_tree_train_square_sample(sample_size, level)
+
+    # given the (content_id, topic_id, class) tuple, determine whether or not there is a correlation between them.
+    def has_correlations(self, content_num_ids, topic_num_ids, class_ids):
+        raise Exception("This function is not supported for tree samplers.")
+
+    # check if there are any correlations at the individual (last) level.
+    def has_correlations_individual(self, content_num_ids, topic_num_ids):
+        return self.tree_sampler.has_correlations_individual(content_num_ids, topic_num_ids)
+
+    def has_correlations_tree_level(self, content_num_ids, topic_levelk_ids, level):
+        return self.tree_sampler.has_correlations_tree_level(content_num_ids, topic_levelk_ids, level)
+
+    def is_tree_sampler(self):
+        return True
+
 # This class is to draw mixed samples from the
 class MixedSampler(SamplerBase):
     # draws from a list of samplers, with given probabilities. If sampler_probas is none, assumes uniformly distributed

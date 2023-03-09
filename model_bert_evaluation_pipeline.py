@@ -355,9 +355,10 @@ def obtain_topic_based_probas(proba_callback, topics_restrict, contents_restrict
                     continuous_success = 0
                     batch_size = min(batch_size + 30000, max_batch_size)
             else:
-                batch_size = max(batch_size - 1500, 1)
+                batch_size = max(batch_size - 3000, 1)
                 max_batch_size = batch_size
                 continuous_success = 0
+                gc.collect()
 
         if k % 1000 == 0:
             print("Completed topic " + str(k) + " out of " + str(len(topics_restrict)) + " for probabilities calculation")
@@ -425,6 +426,8 @@ def obtain_topic_based_probas_stepup_dimreduce(proba_callback, topics_restrict, 
 
         # use model to predict here
         while written_into_chunks >= batch_size:
+            print("Chunk too large, evaluating and shrinking chunk: ", written_into_chunks, "   Batch size: ", batch_size)
+            ctime = time.time()
             topics_pred_id = topics_tuple_chunk[:batch_size]
             contents_pred_id = contents_tuple_chunk[:batch_size]
             try:
@@ -449,26 +452,32 @@ def obtain_topic_based_probas_stepup_dimreduce(proba_callback, topics_restrict, 
                     contents_tuple_chunk[:written_into_chunks] = contents_tuple_pending
                 else:
                     written_into_chunks = 0
+                ctime = time.time() - ctime
+                print("Shrinked chunk size into ", written_into_chunks, "    Time taken: ", ctime)
 
-                gc.collect()
                 # if success we update
                 continuous_success += 1
                 if continuous_success == 3:
                     continuous_success = 0
                     batch_size = min(batch_size + 30000, max_batch_size)
             else:
-                batch_size = max(batch_size - 1500, 1)
+                batch_size = max(batch_size - 30000, 1)
                 max_batch_size = batch_size
                 continuous_success = 0
+
+            gc.collect()
 
         if k % 1000 == 0:
             print("Completed topic " + str(k) + " out of " + str(len(topics_restrict)) + " for probabilities calculation")
 
     # compute remaining data
     if written_into_chunks > 0:
+        print("Writing additional data: ", written_into_chunks, " Current batch size: ", batch_size)
         tlow = 0
         while tlow < written_into_chunks:
             thigh = min(tlow + batch_size, written_into_chunks)
+            print("Write additional data loop:  ", tlow, "-", thigh)
+            ctime = time.time()
             topics_pred_id = topics_tuple_chunk[tlow:thigh]
             contents_pred_id = contents_tuple_chunk[tlow:thigh]
             probabilities = predict_probabilities_direct_gpu2_stepup_dimreduce(proba_callback, tf.constant(topics_pred_id),
@@ -483,6 +492,9 @@ def obtain_topic_based_probas_stepup_dimreduce(proba_callback, topics_restrict, 
             del probabilities_np, topics_pred_id, contents_pred_id
             total_probas_write += 1
             tlow = thigh
+
+            ctime = time.time() - ctime
+            print("Completed ", tlow, "-", thigh, "   Time taken: ", ctime)
     del topics_tuple_chunk, contents_tuple_chunk
     gc.collect()
     return total_probas_write
