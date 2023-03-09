@@ -84,6 +84,109 @@ class DefaultSampler(SamplerBase):
     def has_correlations(self, content_num_ids, topic_num_ids, class_ids):
         return self.sample_verification_function(content_num_ids, topic_num_ids)
 
+class DampeningSampler(SamplerBase):
+    def __init__(self, combined_train_folder, combined_test_folder, topics_cor_file, contents_cor_file):
+        SamplerBase.__init__(self)
+        has_cor_topics = np.load(topics_cor_file)
+        has_cor_contents = np.load(contents_cor_file)
+
+        train_topics_pos = data_bert.fast_contains_multi(data_bert.train_topics_num_id, has_cor_topics)
+        train_contents_pos = data_bert.fast_contains_multi(data_bert.train_contents_num_id, has_cor_contents)
+        test_topics_pos = data_bert.fast_contains_multi(data_bert.test_topics_num_id, has_cor_topics)
+        test_contents_pos = data_bert.fast_contains_multi(data_bert.test_contents_num_id, has_cor_contents)
+
+        self.has_cor_train_topics = has_cor_topics[np.logical_and(train_topics_pos, train_contents_pos)]
+        self.has_cor_train_contents = has_cor_contents[np.logical_and(train_topics_pos, train_contents_pos)]
+        self.has_cor_test_topics = has_cor_topics[np.logical_and(test_topics_pos, test_contents_pos)]
+        self.has_cor_test_contents = has_cor_contents[np.logical_and(test_topics_pos, test_contents_pos)]
+
+        del has_cor_topics, has_cor_contents, train_topics_pos, train_contents_pos, test_topics_pos, test_contents_pos
+
+        self.combined_train_folder = combined_train_folder
+        self.combined_test_folder = combined_test_folder
+
+        self.train_file_lengths = np.load(self.combined_train_folder + "saved_files_lengths.npy")
+        self.test_file_lengths = np.load(self.combined_test_folder + "saved_files_lengths.npy")
+
+        self.train_averages = self.train_file_lengths.astype(dtype=np.float32) / self.train_file_lengths.sum()
+        self.test_averages = self.test_file_lengths.astype(dtype=np.float32) / self.test_file_lengths.sum()
+
+    # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
+    def obtain_train_sample(self, sample_size):
+        has_cor_choice = np.random.choice(len(self.has_cor_train_topics), sample_size // 2, replace=False)
+        topics = self.has_cor_train_topics[has_cor_choice]
+        contents = self.has_cor_train_contents[has_cor_choice]
+        cors = np.ones(len(topics))
+
+        topics2, contents2, cors2, x = self.obtain_train_square_sample(sample_size // 2)
+        topics = np.concatenate((topics, topics2))
+        contents = np.concatenate((contents, contents2))
+        cors = np.concatenate((cors, cors2))
+
+        return topics, contents, cors, None
+
+    # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
+    def obtain_test_sample(self, sample_size):
+        has_cor_choice = np.random.choice(len(self.has_cor_test_topics), sample_size // 2, replace=False)
+        topics = self.has_cor_test_topics[has_cor_choice]
+        contents = self.has_cor_test_contents[has_cor_choice]
+        cors = np.ones(len(topics))
+
+        topics2, contents2, cors2, x = self.obtain_test_square_sample(sample_size // 2)
+        topics = np.concatenate((topics, topics2))
+        contents = np.concatenate((contents, contents2))
+        cors = np.concatenate((cors, cors2))
+
+        return topics, contents, cors, None
+
+    # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
+    def obtain_train_square_sample(self, sample_size):
+        topics = []
+        contents = []
+
+        occs = np.random.choice(len(self.train_averages), sample_size, p=self.train_averages)
+        occurences = [(occs == k).sum() for k in range(len(self.train_averages))]
+        del occs
+        for k in range(len(self.train_averages)):
+            if occurences[k] > 0:
+                content_ids = np.load(self.combined_train_folder + str(k) + "_contents.npy")
+                topic_ids = np.load(self.combined_train_folder + str(k) + "_topics.npy")
+                choice = np.random.choice(len(content_ids), occurences[k], replace=False)
+
+                contents.extend(list(content_ids[choice]))
+                topics.extend(list(topic_ids[choice]))
+
+                del content_ids, topic_ids, choice
+        topics = np.array(topics, dtype=np.int32)
+        contents = np.array(contents, dtype=np.int32)
+        return topics, contents, data_bert.has_correlations(contents, topics), None
+
+    # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
+    def obtain_test_square_sample(self, sample_size):
+        topics = []
+        contents = []
+
+        occs = np.random.choice(len(self.test_averages), sample_size, p=self.test_averages)
+        occurences = [(occs == k).sum() for k in range(len(self.test_averages))]
+        del occs
+        for k in range(len(self.test_averages)):
+            if occurences[k] > 0:
+                content_ids = np.load(self.combined_test_folder + str(k) + "_contents.npy")
+                topic_ids = np.load(self.combined_test_folder + str(k) + "_topics.npy")
+                choice = np.random.choice(len(content_ids), occurences[k], replace=False)
+
+                contents.extend(list(content_ids[choice]))
+                topics.extend(list(topic_ids[choice]))
+
+                del content_ids, topic_ids, choice
+        topics = np.array(topics, dtype=np.int32)
+        contents = np.array(contents, dtype=np.int32)
+        return topics, contents, data_bert.has_correlations(contents, topics), None
+
+    # given the (content_id, topic_id, class) tuple, determine whether or not there is a correlation between them.
+    def has_correlations(self, content_num_ids, topic_num_ids, class_ids):
+        return data_bert.has_correlations(content_num_ids, topic_num_ids)
+
 class ReversedSampler(SamplerBase):
     def __init__(self, sampler):
         SamplerBase.__init__(self)

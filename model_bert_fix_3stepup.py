@@ -6,42 +6,76 @@ import numpy as np
 import config
 import gc
 import data_bert_sampler
-import model_bert_submodels
 
 
-# same as stepup class, but we have 3 stepup layers, and use a modular approach. tree training is not supported.
+default_dampening_sampler_instance = data_bert_sampler.DampeningSampler(config.resources_path + "model_eval_tree/" + "topics_tree_overshoot_small_trained_on_train_eval_train_COMBINE/",
+                                                                              config.resources_path + "model_eval_tree/" + "topics_tree_overshoot_small_trained_on_train_eval_test_COMBINE/",
+                                                                              config.resources_path + "model_eval_tree/" + "topics_tree_overshoot_small_trained_on_train_cors_topics.npy",
+                                                                              config.resources_path + "model_eval_tree/" + "topics_tree_overshoot_small_trained_on_train_cors_contents.npy")
 
 class Model(tf.keras.Model):
     # only the argument units_size define the shape of the model. the argument training_sampler is used for training only.
-    def __init__(self, units_size=512, init_noise=0.05, init_noise_overshoot=0.2, init_noise_overshoot2=0.6, use_siamese = False):
+    def __init__(self, units_size=512, init_noise_topics=0.05, init_noise_overshoot_topics=0.2, init_noise_dampen_topics=0.05,
+                 init_noise_contents=0.05, init_noise_overshoot_contents=0.2, init_noise_dampen_contents=0.05,
+                 init_noise_lang=0.2, init_noise_overshoot_lang=0.3, init_noise_dampen_lang=0.3):
         super(Model, self).__init__()
 
         self.training_sampler = None
         self.training_max_size = None
 
-        self.use_siamese = use_siamese
-        if use_siamese:
-            self.overshoot2_layer = model_bert_submodels.SiameseTwinSubmodel(units_size=units_size)
-            self.overshoot_layer = model_bert_submodels.SiameseTwinSubmodel(units_size=units_size)
-            self.usual_layer = model_bert_submodels.SiameseTwinSubmodel(units_size=units_size)
+        # standard stuff
+        self.dropout0_topics_dampen = tf.keras.layers.GaussianNoise(stddev=init_noise_dampen_topics)
+        self.dropout0_topics_overshoot = tf.keras.layers.GaussianNoise(stddev=init_noise_overshoot_topics)
+        self.dropout0_feed_topics = tf.keras.layers.GaussianNoise(stddev=init_noise_topics)
 
-            self.dropout0_overshoot2_left = tf.keras.layers.GaussianNoise(stddev=init_noise_overshoot2)
-            self.dropout0_overshoot_left = tf.keras.layers.GaussianNoise(stddev=init_noise_overshoot)
-            self.dropout0_left = tf.keras.layers.GaussianNoise(stddev=init_noise)
+        self.dropout0_contents_dampen = tf.keras.layers.GaussianNoise(stddev=init_noise_dampen_contents)
+        self.dropout0_contents_overshoot = tf.keras.layers.GaussianNoise(stddev=init_noise_overshoot_contents)
+        self.dropout0_feed_contents = tf.keras.layers.GaussianNoise(stddev=init_noise_contents)
 
-            self.dropout0_overshoot2_right = tf.keras.layers.GaussianNoise(stddev=init_noise_overshoot2)
-            self.dropout0_overshoot_right = tf.keras.layers.GaussianNoise(stddev=init_noise_overshoot)
-            self.dropout0_right = tf.keras.layers.GaussianNoise(stddev=init_noise)
-        else:
-            self.overshoot2_layer = model_bert_submodels.FullyConnectedSubmodel(units_size=units_size)
-            self.overshoot_layer = model_bert_submodels.FullyConnectedSubmodel(units_size=units_size)
-            self.usual_layer = model_bert_submodels.FullyConnectedSubmodel(units_size=units_size)
+        self.dropout0_lang_dampen = tf.keras.layers.GaussianNoise(stddev=init_noise_dampen_lang)
+        self.dropout0_lang_overshoot = tf.keras.layers.GaussianNoise(stddev=init_noise_overshoot_lang)
+        self.dropout0_feed_lang = tf.keras.layers.GaussianNoise(stddev=init_noise_lang)
 
-            self.dropout0_overshoot2 = tf.keras.layers.GaussianNoise(stddev=init_noise_overshoot2)
-            self.dropout0_overshoot = tf.keras.layers.GaussianNoise(stddev=init_noise_overshoot)
-            self.dropout0 = tf.keras.layers.GaussianNoise(stddev=init_noise)
+        self.dense1_os = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense1_os")
+        self.dropout1_os = tf.keras.layers.Dropout(rate=0.3)
+        self.dense2_os = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense2_os")
+        self.dropout2_os = tf.keras.layers.Dropout(rate=0.3)
+        self.dense3_os = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense3_os")
+        self.dropout3_os = tf.keras.layers.Dropout(rate=0.3)
+        self.dense4_os = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense4_os")
+        self.dropout4_os = tf.keras.layers.Dropout(rate=0.3)
+        self.dense5_os = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense5_os")
+        self.dropout5_os = tf.keras.layers.Dropout(rate=0.3)
 
-            self.concat_layer = tf.keras.layers.Concatenate(axis=-1)
+        self.dense1_dp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense1_dp")
+        self.dropout1_dp = tf.keras.layers.Dropout(rate=0.3)
+        self.dense2_dp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense2_dp")
+        self.dropout2_dp = tf.keras.layers.Dropout(rate=0.3)
+        self.dense3_dp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense3_dp")
+        self.dropout3_dp = tf.keras.layers.Dropout(rate=0.3)
+        self.dense4_dp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense4_dp")
+        self.dropout4_dp = tf.keras.layers.Dropout(rate=0.3)
+        self.dense5_dp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense5_dp")
+        self.dropout5_dp = tf.keras.layers.Dropout(rate=0.3)
+
+        self.finalOvershoot = tf.keras.layers.Dense(units=1, activation="sigmoid", name="finalOvershoot")
+        self.finalDampen = tf.keras.layers.Dense(units=1, activation="sigmoid", name="finalOvershoot")
+
+        # self.dropoutCombine1 = tf.keras.layers.Dropout(rate=0.5)
+        # self.dropoutCombine2 = tf.keras.layers.Dropout(rate=0.5)
+
+        # dense1_fp takes in the combined input of dense0 and denseOvershoot
+        self.dense1_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense1_fp")
+        self.dropout1_fp = tf.keras.layers.Dropout(rate=0.3)
+        self.dense2_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense2_fp")
+        self.dropout2_fp = tf.keras.layers.Dropout(rate=0.3)
+        self.dense3_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense3_fp")
+        self.dropout3_fp = tf.keras.layers.Dropout(rate=0.3)
+        self.dense4_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense4_fp")
+        self.dropout4_fp = tf.keras.layers.Dropout(rate=0.3)
+        self.dense5_fp = tf.keras.layers.Dense(units=units_size, activation="relu", name="dense5_fp")
+        self.dropout5_fp = tf.keras.layers.Dropout(rate=0.3)
+        self.final = tf.keras.layers.Dense(units=1, activation="sigmoid", name="final")
 
         # loss functions and eval metrics
         self.accuracy = tf.keras.metrics.BinaryAccuracy(name="accuracy")
@@ -56,12 +90,74 @@ class Model(tf.keras.Model):
 
         self.train_sample_generation = data_bert.obtain_train_sample
         self.train_sample_square_generation = data_bert.obtain_train_sample
-    def call(self, data, training=False, actual_y=None, final_tree_level=None):
-        if self.use_siamese:
-            os2result = self.overshoot2_layer(data)
-            os2result[""]
-        else:
 
+    # for training, we feed in actual_y to overdetermine the predictions. if actual_y is not fed in,
+    # usual gradient descent will be used. actual_y should be a (batch_size x 2) numpy array, where
+    # the first column is for the full model prediction array, the second column for the intermediate
+    # prediction
+    def call(self, data, training=False, actual_y=None, final_tree_level=None):
+        contents_description = tf.squeeze(data["contents"]["description"], axis=1)
+        contents_title = tf.squeeze(data["contents"]["title"], axis=1)
+        contents_lang = tf.squeeze(data["contents"]["lang"], axis=1)
+        topics_description = tf.squeeze(data["topics"]["description"], axis=1)
+        topics_title = tf.squeeze(data["topics"]["title"], axis=1)
+        topics_lang = tf.squeeze(data["topics"]["lang"], axis=1)
+        # combine the (batch_size x set_size x (bert_embedding_size / num_langs)) tensors into (batch_size x set_size x (bert_embedding_size*2+num_langs+bert_embedding_size*2+num_langs))
+
+        contents_text_info = tf.concat([contents_description, contents_title], axis=-1)
+        topics_text_info = tf.concat([topics_description, topics_title], axis=-1)
+
+        shape = contents_description.shape
+
+        first_layer_overshoot_contents = self.dropout0_contents_overshoot(contents_text_info, training=training)
+        first_layer_overshoot_topics = self.dropout0_topics_overshoot(topics_text_info, training=training)
+        first_layer_overshoot_contents_lang = self.dropout0_lang_overshoot(contents_lang, training=training)
+        first_layer_overshoot_topics_lang = self.dropout0_lang_overshoot(topics_lang, training=training)
+
+        first_layer_dampen_contents = self.dropout0_contents_dampen(contents_text_info, training=training)
+        first_layer_dampen_topics = self.dropout0_topics_dampen(topics_text_info, training=training)
+        first_layer_dampen_contents_lang = self.dropout0_lang_dampen(contents_lang, training=training)
+        first_layer_dampen_topics_lang = self.dropout0_lang_dampen(topics_lang, training=training)
+
+        first_layer2_contents = self.dropout0_feed_contents(contents_text_info, training=training)
+        first_layer2_topics = self.dropout0_feed_topics(topics_text_info, training=training)
+        first_layer2_contents_lang = self.dropout0_feed_lang(contents_lang, training=training)
+        first_layer2_topics_lang = self.dropout0_feed_lang(topics_lang, training=training)
+
+        first_layer_overshoot = tf.concat(
+            [first_layer_overshoot_contents, first_layer_overshoot_contents_lang, first_layer_overshoot_topics, first_layer_overshoot_topics_lang],
+            axis=-1)
+        first_layer_dampen = tf.concat(
+            [first_layer_dampen_contents, first_layer_dampen_contents_lang, first_layer_dampen_topics, first_layer_dampen_topics_lang],
+            axis=-1)
+        first_layer2 = tf.concat(
+            [first_layer2_contents, first_layer2_contents_lang, first_layer2_topics, first_layer2_topics_lang],
+            axis=-1)
+
+        t = self.dropout1_os(self.dense1_os(first_layer_overshoot), training=training)
+        t = self.dropout2_os(self.dense2_os(t), training=training)
+        t = self.dropout3_os(self.dense3_os(t), training=training)
+        t = self.dropout4_os(self.dense4_os(t), training=training)
+        overshoot_full_result = self.dropout5_os(self.dense5_os(t), training=training)
+        overshoot_result = self.finalOvershoot(overshoot_full_result)
+
+        t = self.dropout1_os(self.dense1_os(first_layer_dampen), training=training)
+        t = self.dropout2_os(self.dense2_os(t), training=training)
+        t = self.dropout3_os(self.dense3_os(t), training=training)
+        t = self.dropout4_os(self.dense4_os(t), training=training)
+        dampen_full_result = self.dropout5_os(self.dense5_os(t), training=training)
+        dampen_result = self.finalOvershoot(dampen_full_result)
+
+        t = self.dropout1_fp(self.dense1_fp(tf.concat([
+            first_layer2, overshoot_full_result, dampen_full_result
+        ], axis=-1)), training=training)
+        t = self.dropout2_fp(self.dense2_fp(t), training=training)
+        t = self.dropout3_fp(self.dense3_fp(t), training=training)
+        t = self.dropout4_fp(self.dense4_fp(t), training=training)
+        t = self.dropout5_fp(self.dense5_fp(t), training=training)
+        t = self.final(t)
+
+        return tf.concat([t, overshoot_result, dampen_result], axis=1)
 
     def compile(self, weight_decay=0.01, learning_rate=0.0005):
         super(Model, self).compile(run_eagerly=True)
@@ -78,13 +174,16 @@ class Model(tf.keras.Model):
         # generates the overshoot functions
         self.tuple_choice_sampler_overshoot = data_bert_sampler.default_sampler_overshoot2_instance
 
-    # custom_generation_functions should be a dict, e.g. {"train_sample": data_bert.obtain_train_sample,
-    #             "test_sample": data_bert.obtain_test_sample,
-    #             "train_square_sample": data_bert.obtain_train_square_sample,
-    #             "test_square_sample": data_bert.obtain_test_square_sample}
+        # generates the dampening functions
+        self.tuple_choice_sampler_dampen = default_dampening_sampler_instance
+
+        s = self(self.tuple_choice_sampler.obtain_input_data(np.array([0]), np.array([0])))
+        del s
+
     def set_training_params(self, training_sample_size=15000, training_max_size=None,
                             training_sampler=None, custom_metrics=None, custom_stopping_func=None,
-                            custom_tuple_choice_sampler=None, custom_tuple_choice_sampler_overshoot=None):
+                            custom_tuple_choice_sampler=None, custom_tuple_choice_sampler_overshoot=None,
+                            custom_tuple_choice_sampler_dampen=None):
         self.training_sample_size = training_sample_size
         self.training_max_size = training_max_size
         if training_sampler is not None:
@@ -98,138 +197,58 @@ class Model(tf.keras.Model):
             self.tuple_choice_sampler = custom_tuple_choice_sampler
         if custom_tuple_choice_sampler_overshoot is not None:
             self.tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot
+        if custom_tuple_choice_sampler_dampen is not None:
+            self.tuple_choice_sampler_dampen = custom_tuple_choice_sampler_dampen
 
-    def train_step_tree(self):
-        for k in range(50):
-            # two pass, we first compute on overshoot only, and then compute on the full thing
-            ratio1 = 2000.0 / 4000
-            ratio2 = 2000.0 / 4000
-
-            topics, contents, cors, class_ids, tree_levels, multipliers = self.tuple_choice_sampler.obtain_train_sample(
-                int(ratio1 * self.training_sample_size))
-            topics2, contents2, cors2, class_ids2, tree_levels2, multipliers2 = self.tuple_choice_sampler_overshoot.obtain_train_notree_sample(
-                int(ratio2 * self.training_sample_size))
-
-            y0 = np.tile(np.concatenate([cors, cors2]), 2)
-
-            topics = np.concatenate([topics, topics2])
-            contents = np.concatenate([contents, contents2])
-            tree_levels = np.concatenate([tree_levels, tree_levels2])
-
-            input_data = self.training_sampler.obtain_input_data_tree_both(topics_id_klevel=topics,
-                                                                           contents_id=contents,
-                                                                           tree_levels=tree_levels, final_level=5)
-            y = tf.constant(y0)
-            final_tree_level = np.tile((tree_levels == 5).astype(dtype=np.float32), 2)
-
-            multipliers_tf = tf.constant(np.tile(
-                np.concatenate([multipliers, multipliers2 * 10], axis=0),
-                2), dtype=tf.float32)
-
-            with tf.GradientTape() as tape:
-                y_pred = self(input_data, training=True, actual_y=y0, final_tree_level=final_tree_level)
-                y_pred = tf.concat([y_pred[:len(cors), 0], y_pred[len(cors):len(y0), 1],
-                                    y_pred[len(y0):(len(y0) + len(cors)), 0],
-                                    y_pred[(len(y0) + len(cors)):(2 * len(y0)), 1]],
-                                   axis=0)
-                loss = self.loss(tf.expand_dims(y, axis=1), tf.expand_dims(y_pred, axis=1),
-                                 sample_weight=multipliers_tf)
-            trainable_vars = self.trainable_weights
-            gradients = tape.gradient(loss, trainable_vars)
-            self.optimizer.apply_gradients(zip(gradients, trainable_vars))
-
-        if self.training_max_size is None:
-            limit = 9223372036854775807
-            limit_sq = 9223372036854775807
-        else:
-            limit = self.training_max_size
-
-        # evaluation at larger subset
-        ratio1 = 2000.0 / 4000
-        ratio2 = 2000.0 / 4000
-
-        topics, contents, cors, class_ids, tree_levels, multipliers = self.tuple_choice_sampler.obtain_train_sample(
-            int(ratio1 * self.training_sample_size))
-        topics2, contents2, cors2, class_ids2, tree_levels2, multipliers2 = self.tuple_choice_sampler_overshoot.obtain_train_notree_sample(
-            int(ratio2 * self.training_sample_size))
-
-        y0 = np.tile(np.concatenate([cors, cors2]), 2)
-
-        topics = np.concatenate([topics, topics2])
-        contents = np.concatenate([contents, contents2])
-        tree_levels = np.concatenate([tree_levels, tree_levels2])
-
-        input_data = self.training_sampler.obtain_input_data_tree_both(topics_id_klevel=topics, contents_id=contents,
-                                                                       tree_levels=tree_levels, final_level=5)
-        y = tf.constant(y0)
-        final_tree_level = np.tile((tree_levels == 5).astype(dtype=np.float32), 2)
-
-        multipliers_tf = tf.constant(np.tile(
-            np.concatenate([multipliers, multipliers2 * 10], axis=0),
-            2), dtype=tf.float32)
-
-        y_pred = self(input_data, training=True, actual_y=y0, final_tree_level=final_tree_level)
-        y_pred = tf.concat([y_pred[:len(cors), 0], y_pred[len(cors):len(y0), 1],
-                            y_pred[len(y0):(len(y0) + len(cors)), 0], y_pred[(len(y0) + len(cors)):(2 * len(y0)), 1]],
-                           axis=0)
-        self.entropy_large_set.update_state(tf.expand_dims(y, axis=1), tf.expand_dims(y_pred, axis=1),
-                                            sample_weight=multipliers_tf)
-
-        new_entropy = self.entropy_large_set.result()
-        if (self.prev_entropy is not None) and new_entropy > self.prev_entropy * 1.05:
-            print(
-                "---------------------------------WARNING: Training problem: entropy has increased! ---------------------------------")
-        else:
-            self.prev_entropy = new_entropy
-
-        for m in self.metrics:
-            m.update_state(y, y_pred)
-
-        # eval other test metrics
-        if self.custom_metrics is not None:
-            self.custom_metrics.update_metrics(self, limit)
-
-        # early stopping
-        if (self.custom_stopping_func is not None) and self.custom_stopping_func.evaluate(self.custom_metrics, self):
-            self.stop_training = True
-
-        return {**{m.name: m.result() for m in self.metrics},
-                "entropy_large_set": self.entropy_large_set.result(), **self.custom_metrics.obtain_metrics()}
+    @tf.function
+    def call_optim_step(self, input_data, y, length1, length2, length3):
+        with tf.GradientTape() as tape:
+            y_pred = self(input_data, training=True)
+            loss = self.loss(y, tf.concat([y_pred[:length1, 0], y_pred[length1:length2, 1],
+                                           y_pred[length2:length3, 2],
+                                           y_pred[length3:(length3 + length1), 0],
+                                           y_pred[(length3 + length1):(length3 + length2), 1],
+                                           y_pred[(length3 + length2):, 2]], axis=0))
+        trainable_vars = self.trainable_weights
+        gradients = tape.gradient(loss, trainable_vars)
+        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 
     def train_step(self, data):
         if self.tuple_choice_sampler.is_tree_sampler():
             return self.train_step_tree()
         for k in range(50):
-            # two pass, we first compute on overshoot only, and then compute on the full thing
-            ratio1 = 500.0 / 4000
-            ratio2 = 3500.0 / 4000
+            ratio1 = 1.0 / 15
+            ratio2 = 7.0 / 15
+            ratio3 = 7.0 / 15
 
             topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
-                int(ratio1 * self.training_sample_size))
-            topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
+                int(ratio1 * self.training_sample_size) // 2)
+            topics_, contents_, cors_, class_ids_ = self.tuple_choice_sampler_dampen.obtain_train_sample(
+                int(ratio1 * self.training_sample_size) // 2)
+            topics2, contents2, cors2, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
                 int(ratio2 * self.training_sample_size))
+            topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen.obtain_train_sample(
+                int(ratio3 * self.training_sample_size))
 
-            y0_1 = self.tuple_choice_sampler.has_correlations(contents, topics, class_ids)
+            del cors, cors2, cors3, cors_, class_ids, class_ids_, class_ids2, class_ids3
 
-            y1_2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, class_ids2)
+            topics = np.concatenate([topics, topics_])
+            contents = np.concatenate([contents, contents_])
 
-            y0 = np.tile(np.concatenate([y0_1, y1_2]), 2)
+            y1 = self.tuple_choice_sampler.has_correlations(contents, topics, class_ids)
+            y2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, class_ids2)
+            y3 = self.tuple_choice_sampler_dampen.has_correlations(contents3, topics3, class_ids3)
 
-            topics = np.concatenate([topics, topics2])
-            contents = np.concatenate([contents, contents2])
+            y0 = np.tile(np.concatenate([y1, y2, y3]), 2)
+            y = tf.constant(y0)
+
+
+            topics = np.concatenate([topics, topics2, topics3])
+            contents = np.concatenate([contents, contents2, contents3])
 
             input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
 
-            y = tf.constant(y0)
-
-            with tf.GradientTape() as tape:
-                y_pred = self(input_data, training=True)
-                loss = self.loss(y, tf.concat([y_pred[:len(y0_1), 0], y_pred[len(y0_1):len(y0), 1],
-                                               y_pred[len(y0):(len(y0) + len(y0_1)), 0],
-                                               y_pred[(len(y0) + len(y0_1)):(2 * len(y0)), 1]], axis=0))
-            trainable_vars = self.trainable_weights
-            gradients = tape.gradient(loss, trainable_vars)
-            self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+            self.call_optim_step(input_data, y, len(y1), len(y1) + len(y2), len(y1) + len(y2) + len(y3))
 
         if self.training_max_size is None:
             limit = 9223372036854775807
@@ -238,31 +257,43 @@ class Model(tf.keras.Model):
             limit = self.training_max_size
 
         # evaluation at larger subset
-        ratio1 = 500.0 / 4000
-        ratio2 = 3500.0 / 4000
+        ratio1 = 1.0 / 15
+        ratio2 = 7.0 / 15
+        ratio3 = 7.0 / 15
 
         topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
-            int(ratio1 * self.training_sample_size))
-        topics2, contents2, cors, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
+            int(ratio1 * self.training_sample_size) // 2)
+        topics_, contents_, cors_, class_ids_ = self.tuple_choice_sampler_dampen.obtain_train_sample(
+            int(ratio1 * self.training_sample_size) // 2)
+        topics2, contents2, cors2, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
             int(ratio2 * self.training_sample_size))
+        topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen.obtain_train_sample(
+            int(ratio3 * self.training_sample_size))
 
-        y0_1 = self.tuple_choice_sampler.has_correlations(contents, topics, class_ids)
+        del cors, cors2, cors3, cors_, class_ids, class_ids_, class_ids2, class_ids3
 
-        y1_2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, class_ids2)
+        topics = np.concatenate([topics, topics_])
+        contents = np.concatenate([contents, contents_])
 
-        y0 = np.tile(np.concatenate([y0_1, y1_2]), 2)
+        y1 = self.tuple_choice_sampler.has_correlations(contents, topics, class_ids)
+        y2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, class_ids2)
+        y3 = self.tuple_choice_sampler_dampen.has_correlations(contents3, topics3, class_ids3)
 
-        topics = np.concatenate([topics, topics2])
-        contents = np.concatenate([contents, contents2])
+        y0 = np.tile(np.concatenate([y1, y2, y3]), 2)
+        y = tf.constant(y0)
+
+        topics = np.concatenate([topics, topics2, topics3])
+        contents = np.concatenate([contents, contents2, contents3])
 
         input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
 
-        y = tf.constant(y0)
-
         y_pred = self(input_data)
-        y_pred = tf.concat([y_pred[:len(y0_1), 0], y_pred[len(y0_1):len(y0), 1],
-                            y_pred[len(y0):(len(y0) + len(y0_1)), 0], y_pred[(len(y0) + len(y0_1)):(2 * len(y0)), 1]],
-                           axis=0)
+        length1, length2, length3 = len(y1), len(y1) + len(y2), len(y1) + len(y2) + len(y3)
+        y_pred = tf.concat([y_pred[:length1, 0], y_pred[length1:length2, 1],
+                                           y_pred[length2:length3, 2],
+                                           y_pred[length3:(length3 + length1), 0],
+                                           y_pred[(length3 + length1):(length3 + length2), 1],
+                                           y_pred[(length3 + length2):, 2]], axis=0)
         self.entropy_large_set.update_state(y, y_pred)
 
         new_entropy = self.entropy_large_set.result()
@@ -290,8 +321,8 @@ class Model(tf.keras.Model):
     def metrics(self):
         return [self.accuracy, self.precision, self.recall, self.entropy]
 
-
 class DynamicMetrics(model_bert_fix.CustomMetrics):
+
     TRAIN = 1
     TRAIN_SQUARE = 2
     TEST = 3
@@ -300,139 +331,68 @@ class DynamicMetrics(model_bert_fix.CustomMetrics):
     TRAIN_SQUARE_OVERSHOOT = 6
     TEST_OVERSHOOT = 7
     TEST_SQUARE_OVERSHOOT = 8
+    TRAIN_DAMPEN = 9
+    TRAIN_SQUARE_DAMPEN = 10
+    TEST_DAMPEN = 11
+    TEST_SQUARE_DAMPEN = 12
 
     def __init__(self):
         model_bert_fix.CustomMetrics.__init__(self)
-        self.metrics = []  # a lists of dicts, containing the metrics, and the data_bert_sampler.SamplerBase which contains the metric
+        self.metrics = [] # a lists of dicts, containing the metrics, and the data_bert_sampler.SamplerBase which contains the metric
         self.tree_metrics = []
 
-    def add_metric(self, name, tuple_choice_sampler, tuple_choice_sampler_overshoot, sample_choice=TEST, threshold=0.5):
-        accuracy = tf.keras.metrics.BinaryAccuracy(name=name + "_accuracy", threshold=threshold)
-        precision = tf.keras.metrics.Precision(name=name + "_precision", thresholds=threshold)
-        recall = tf.keras.metrics.Recall(name=name + "_recall", thresholds=threshold)
-        entropy = tf.keras.metrics.BinaryCrossentropy(name=name + "_entropy")
+    def add_metric(self, name, tuple_choice_sampler, sample_choice = TEST, threshold = 0.5):
+        accuracy = tf.keras.metrics.BinaryAccuracy(name = name + "_accuracy", threshold=threshold)
+        precision = tf.keras.metrics.Precision(name = name + "_precision", thresholds=threshold)
+        recall = tf.keras.metrics.Recall(name = name + "_recall", thresholds=threshold)
+        entropy = tf.keras.metrics.BinaryCrossentropy(name = name + "_entropy")
 
         accuracy_nolang = tf.keras.metrics.BinaryAccuracy(name=name + "_accuracy_nolang", threshold=threshold)
         precision_nolang = tf.keras.metrics.Precision(name=name + "_precision_nolang", thresholds=threshold)
         recall_nolang = tf.keras.metrics.Recall(name=name + "_recall_nolang", thresholds=threshold)
         entropy_nolang = tf.keras.metrics.BinaryCrossentropy(name=name + "_entropy_nolang")
-        self.metrics.append({"metrics": [accuracy, precision, recall, entropy, accuracy_nolang, precision_nolang,
-                                         recall_nolang, entropy_nolang], "sampler": tuple_choice_sampler,
-                             "sampler_overshoot": tuple_choice_sampler_overshoot, "sample_choice": sample_choice})
-
-    def add_tree_metric(self, name, tuple_choice_sampler_tree, level, sample_choice=TEST, threshold=0.6):
-        accuracy = tf.keras.metrics.BinaryAccuracy(name=name + "_accuracy", threshold=threshold)
-        precision = tf.keras.metrics.Precision(name=name + "_precision", thresholds=threshold)
-        recall = tf.keras.metrics.Recall(name=name + "_recall", thresholds=threshold)
-        entropy = tf.keras.metrics.BinaryCrossentropy(name=name + "_entropy")
-
-        accuracy_nolang = tf.keras.metrics.BinaryAccuracy(name=name + "_accuracy_nolang", threshold=threshold)
-        precision_nolang = tf.keras.metrics.Precision(name=name + "_precision_nolang", thresholds=threshold)
-        recall_nolang = tf.keras.metrics.Recall(name=name + "_recall_nolang", thresholds=threshold)
-        entropy_nolang = tf.keras.metrics.BinaryCrossentropy(name=name + "_entropy_nolang")
-        self.tree_metrics.append({"metrics": [accuracy, precision, recall, entropy, accuracy_nolang, precision_nolang,
-                                              recall_nolang, entropy_nolang], "sampler": tuple_choice_sampler_tree,
-                                  "sample_choice": sample_choice, "level": level})
+        self.metrics.append({"metrics": [accuracy, precision, recall, entropy, accuracy_nolang, precision_nolang, recall_nolang, entropy_nolang], "sampler": tuple_choice_sampler, "sample_choice": sample_choice})
 
     def update_metrics(self, model, sample_size_limit):
         for k in range(len(self.metrics)):
             kmetrics = self.metrics[k]["metrics"]
             sampler = self.metrics[k]["sampler"]
-            sampler_overshoot = self.metrics[k]["sampler_overshoot"]
             sample_choice = self.metrics[k]["sample_choice"]
 
-            if sample_choice <= 4:
-                if sample_choice == DynamicMetrics.TRAIN:
-                    topics, contents, cors, class_id = sampler.obtain_train_sample(min(60000, sample_size_limit))
-                elif sample_choice == DynamicMetrics.TRAIN_SQUARE:
-                    topics, contents, cors, class_id = sampler.obtain_train_square_sample(
-                        min(360000, sample_size_limit))
-                elif sample_choice == DynamicMetrics.TEST:
-                    topics, contents, cors, class_id = sampler.obtain_test_sample(min(60000, sample_size_limit))
-                elif sample_choice == DynamicMetrics.TEST_SQUARE:
-                    topics, contents, cors, class_id = sampler.obtain_test_square_sample(min(360000, sample_size_limit))
-                input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
-                y = tf.constant(cors, dtype=tf.float32)
-                y_pred = model(input_data)[:, 0]
-            else:
-                if sample_choice == DynamicMetrics.TRAIN_OVERSHOOT:
-                    topics, contents, cors, class_id = sampler_overshoot.obtain_train_sample(
-                        min(60000, sample_size_limit))
-                elif sample_choice == DynamicMetrics.TRAIN_SQUARE_OVERSHOOT:
-                    topics, contents, cors, class_id = sampler_overshoot.obtain_train_square_sample(
-                        min(360000, sample_size_limit))
-                elif sample_choice == DynamicMetrics.TEST_OVERSHOOT:
-                    topics, contents, cors, class_id = sampler_overshoot.obtain_test_sample(
-                        min(60000, sample_size_limit))
-                elif sample_choice == DynamicMetrics.TEST_SQUARE_OVERSHOOT:
-                    topics, contents, cors, class_id = sampler_overshoot.obtain_test_square_sample(
-                        min(360000, sample_size_limit))
-                input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
-                y = tf.constant(cors, dtype=tf.float32)
-                y_pred = model(input_data)[:, 1]
+            if sample_choice == DynamicMetrics.TRAIN:
+                topics, contents, cors, class_id = sampler.obtain_train_sample(min(60000, sample_size_limit))
+            elif sample_choice == DynamicMetrics.TRAIN_SQUARE:
+                topics, contents, cors, class_id = sampler.obtain_train_square_sample(min(360000, sample_size_limit))
+            elif sample_choice == DynamicMetrics.TEST:
+                topics, contents, cors, class_id = sampler.obtain_test_sample(min(60000, sample_size_limit))
+            elif sample_choice == DynamicMetrics.TEST_SQUARE:
+                topics, contents, cors, class_id = sampler.obtain_test_square_sample(min(360000, sample_size_limit))
 
+            y = tf.constant(cors, dtype=tf.float32)
+
+            input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
+            if sample_choice <= 4:
+                y_pred = model(input_data)[:, 0]
+            elif sample_choice <= 8:
+                y_pred = model(input_data)[:, 1]
+            else:
+                y_pred = model(input_data)[:, 2]
             for j in range(4):
                 kmetrics[j].update_state(y, y_pred)
 
             input_data = self.training_sampler.obtain_input_data_filter_lang(topics_id=topics, contents_id=contents)
             if sample_choice <= 4:
                 y_pred = model(input_data)[:, 0]
-            else:
+            elif sample_choice <= 8:
                 y_pred = model(input_data)[:, 1]
-            for j in range(4, 8):
+            else:
+                y_pred = model(input_data)[:, 2]
+
+            for j in range(4,8):
                 kmetrics[j].update_state(y, y_pred)
             gc.collect()
-
-        for k in range(len(self.tree_metrics)):
-            kmetrics = self.tree_metrics[k]["metrics"]
-            sampler = self.tree_metrics[k]["sampler"]
-            sample_choice = self.tree_metrics[k]["sample_choice"]
-            level = self.tree_metrics[k]["level"]
-
-            if sample_choice <= 4:
-                if sample_choice == DynamicMetrics.TRAIN:
-                    topics, contents, cors = sampler.obtain_tree_train_sample(min(50, sample_size_limit), level)
-                elif sample_choice == DynamicMetrics.TRAIN_SQUARE:
-                    topics, contents, cors = sampler.obtain_tree_train_square_sample(min(7, sample_size_limit), level)
-                elif sample_choice == DynamicMetrics.TEST:
-                    topics, contents, cors = sampler.obtain_tree_test_sample(min(50, sample_size_limit), level)
-                elif sample_choice == DynamicMetrics.TEST_SQUARE:
-                    topics, contents, cors = sampler.obtain_tree_test_square_sample(min(7, sample_size_limit), level)
-            else:
-                if sample_choice == DynamicMetrics.TRAIN_OVERSHOOT:
-                    topics, contents, cors = sampler.obtain_tree_train_sample(min(50, sample_size_limit), level)
-                elif sample_choice == DynamicMetrics.TRAIN_SQUARE_OVERSHOOT:
-                    topics, contents, cors = sampler.obtain_tree_train_square_sample(min(7, sample_size_limit), level)
-                elif sample_choice == DynamicMetrics.TEST_OVERSHOOT:
-                    topics, contents, cors = sampler.obtain_tree_test_sample(min(50, sample_size_limit), level)
-                elif sample_choice == DynamicMetrics.TEST_SQUARE_OVERSHOOT:
-                    topics, contents, cors = sampler.obtain_tree_test_square_sample(min(7, sample_size_limit), level)
-            input_data = self.training_sampler.obtain_input_data_tree(topics_id_klevel=topics, contents_id=contents,
-                                                                      tree_levels=np.repeat(level, len(cors)),
-                                                                      final_level=5)
-            y = tf.constant(cors, dtype=tf.float32)
-            if sample_choice <= 4:
-                y_pred = model(input_data)[:, 0]
-            else:
-                y_pred = model(input_data)[:, 1]
-            for j in range(4):
-                kmetrics[j].update_state(y, y_pred)
-
-            input_data = self.training_sampler.obtain_input_data_tree_filter_lang(topics_id_klevel=topics,
-                                                                                  contents_id=contents,
-                                                                                  tree_levels=np.repeat(level,
-                                                                                                        len(cors)),
-                                                                                  final_level=5)
-            if sample_choice <= 4:
-                y_pred = model(input_data)[:, 0]
-            else:
-                y_pred = model(input_data)[:, 1]
-            for j in range(4, 8):
-                kmetrics[j].update_state(y, y_pred)
-
     def obtain_metrics(self):
-        metrics_list = [metr for met in self.metrics for metr in met["metrics"]] + [metr for met in self.tree_metrics
-                                                                                    for metr in met["metrics"]]
+        metrics_list = [metr for met in self.metrics for metr in met["metrics"]] + [metr for met in self.tree_metrics for metr in met["metrics"]]
         return {m.name: m.result() for m in metrics_list}
 
     def get_test_entropy_metric(self):
@@ -449,126 +409,11 @@ class DynamicMetrics(model_bert_fix.CustomMetrics):
                 return mmetrics[3].result()
         raise Exception("No metrics found!")
 
-    def get_total_tree_metric(self):
-        sum = 0.0
-        for k in range(len(self.tree_metrics)):
-            mmetrics = self.tree_metrics[k]["metrics"]
-            sum += mmetrics[3].result()
-        return sum + self.get_test_entropy_metric()
-
-
 default_metrics = DynamicMetrics()
-default_metrics.add_metric("test", data_bert_sampler.default_sampler_instance,
-                           data_bert_sampler.default_sampler_overshoot2_instance, sample_choice=DynamicMetrics.TEST)
-default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance,
-                           data_bert_sampler.default_sampler_overshoot2_instance,
-                           sample_choice=DynamicMetrics.TEST_SQUARE)
-default_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_instance,
-                           data_bert_sampler.default_sampler_overshoot2_instance,
-                           sample_choice=DynamicMetrics.TEST_OVERSHOOT)
-default_metrics.add_metric("test_square_overshoot", data_bert_sampler.default_sampler_instance,
-                           data_bert_sampler.default_sampler_overshoot2_instance,
-                           sample_choice=DynamicMetrics.TEST_SQUARE_OVERSHOOT)
-
-default_tree_metrics = DynamicMetrics()
-default_tree_metrics.add_metric("test", data_bert_sampler.default_sampler_instance,
-                                data_bert_sampler.default_sampler_overshoot2_instance,
-                                sample_choice=DynamicMetrics.TEST)
-default_tree_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance,
-                                data_bert_sampler.default_sampler_overshoot2_instance,
-                                sample_choice=DynamicMetrics.TEST_SQUARE)
-default_tree_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_instance,
-                                data_bert_sampler.default_sampler_overshoot2_instance,
-                                sample_choice=DynamicMetrics.TEST_OVERSHOOT)
-default_tree_metrics.add_tree_metric("treelv0", data_bert_sampler.default_tree_sampler_instance, level=0,
-                                     sample_choice=DynamicMetrics.TEST)
-default_tree_metrics.add_tree_metric("treelv1", data_bert_sampler.default_tree_sampler_instance, level=1,
-                                     sample_choice=DynamicMetrics.TEST)
-default_tree_metrics.add_tree_metric("treelv2", data_bert_sampler.default_tree_sampler_instance, level=2,
-                                     sample_choice=DynamicMetrics.TEST)
-default_tree_metrics.add_tree_metric("treelv3", data_bert_sampler.default_tree_sampler_instance, level=3,
-                                     sample_choice=DynamicMetrics.TEST)
-default_tree_metrics.add_tree_metric("treelv4", data_bert_sampler.default_tree_sampler_instance, level=4,
-                                     sample_choice=DynamicMetrics.TEST)
-
-"""
-default_tree_metrics.add_tree_metric("treelv0_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 0, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
-default_tree_metrics.add_tree_metric("treelv1_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 1, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
-default_tree_metrics.add_tree_metric("treelv2_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 2, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
-default_tree_metrics.add_tree_metric("treelv3_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 3, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
-default_tree_metrics.add_tree_metric("treelv4_overshoot", data_bert_sampler.default_tree_sampler_instance, level = 4, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
-"""
-
-
-def obtain_overshoot_metric_instance(training_tuple_sampler, training_tuple_sampler_overshoot):
-    overshoot_metrics = DynamicMetrics()
-    overshoot_metrics.add_metric("test", data_bert_sampler.default_sampler_instance,
-                                 data_bert_sampler.default_sampler_overshoot2_instance,
-                                 sample_choice=DynamicMetrics.TEST)
-    overshoot_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance,
-                                 data_bert_sampler.default_sampler_overshoot2_instance,
-                                 sample_choice=DynamicMetrics.TEST_SQUARE)
-    overshoot_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_instance,
-                                 data_bert_sampler.default_sampler_overshoot2_instance,
-                                 sample_choice=DynamicMetrics.TEST_OVERSHOOT)
-    overshoot_metrics.add_metric("test_square_overshoot", data_bert_sampler.default_sampler_instance,
-                                 data_bert_sampler.default_sampler_overshoot2_instance,
-                                 sample_choice=DynamicMetrics.TEST_SQUARE_OVERSHOOT)
-    overshoot_metrics.add_metric("test_in_train_sample", training_tuple_sampler, training_tuple_sampler_overshoot,
-                                 sample_choice=DynamicMetrics.TEST)
-    overshoot_metrics.add_metric("test_square_in_train_sample", training_tuple_sampler,
-                                 training_tuple_sampler_overshoot, sample_choice=DynamicMetrics.TEST_SQUARE)
-    return overshoot_metrics
-
-
-class DefaultStoppingFunc(model_bert_fix.CustomStoppingFunc):
-    def __init__(self, model_dir):
-        model_bert_fix.CustomStoppingFunc.__init__(self, model_dir)
-        self.lowest_test_small_entropy = None
-        self.countdown = 0
-        self.equal_thresh = 0
-
-    def evaluate(self, custom_metrics, model):
-        if self.lowest_test_small_entropy is not None:
-            current_test_small_entropy = custom_metrics.get_test_entropy_metric()
-            if current_test_small_entropy < self.lowest_test_small_entropy:
-                self.lowest_test_small_entropy = current_test_small_entropy
-                model.save_weights(self.model_dir + "/best_test_small_entropy.ckpt")
-                self.countdown = 0
-                self.equal_thresh = 0
-            elif current_test_small_entropy > self.lowest_test_small_entropy * 1.02:
-                self.countdown += 1
-                if self.countdown > 10:
-                    return True
-
-        else:
-            current_test_small_entropy = custom_metrics.get_test_entropy_metric()
-            self.lowest_test_small_entropy = current_test_small_entropy
-
-    def force_final_state(self):
-        self.lowest_test_small_entropy = None
-        self.countdown = 0
-        self.equal_thresh = 0
-
-
-class DefaultTreeStoppingFunc(model_bert_fix.CustomStoppingFunc):
-    def __init__(self, model_dir):
-        model_bert_fix.CustomStoppingFunc.__init__(self, model_dir)
-        self.lowest_test_small_entropy = None
-        self.countdown = 0
-
-    def evaluate(self, custom_metrics, model):
-        if self.lowest_test_small_entropy is not None:
-            current_test_small_entropy = custom_metrics.get_total_tree_metric()
-            if current_test_small_entropy < self.lowest_test_small_entropy:
-                self.lowest_test_small_entropy = current_test_small_entropy
-                model.save_weights(self.model_dir + "/best_test_small_entropy.ckpt")
-                self.countdown = 0
-            elif current_test_small_entropy > self.lowest_test_small_entropy * 1.3:
-                self.countdown += 1
-                if self.countdown > 50:
-                    return True
-        else:
-            current_test_small_entropy = custom_metrics.get_total_tree_metric()
-            self.lowest_test_small_entropy = current_test_small_entropy
-        return False
+default_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST)
+default_metrics.add_metric("test_final_dampen", default_dampening_sampler_instance, sample_choice = DynamicMetrics.TEST)
+default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
+default_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
+default_metrics.add_metric("test_dampen", default_dampening_sampler_instance, sample_choice = DynamicMetrics.TEST_DAMPEN)
+default_metrics.add_metric("test_dampen_usual", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_DAMPEN)
+default_metrics.add_metric("test_square_dampen", default_dampening_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE_DAMPEN)
