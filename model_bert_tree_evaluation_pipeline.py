@@ -42,7 +42,7 @@ def compute_preorder_id(node, cur_id, topic_id_to_preorder_id, preorder_id_to_to
 
     topic_id_to_subtree_end[node.topic_num_id] = node.subtree_end_id
 
-    # expand it if it is too small
+    """# expand it if it is too small
     if topic_id_to_subtree_end[node.topic_num_id] - topic_id_to_preorder_id[node.topic_num_id] < 7:
         cnode = node
         while cnode.parent is not None:
@@ -50,7 +50,7 @@ def compute_preorder_id(node, cur_id, topic_id_to_preorder_id, preorder_id_to_to
             if cnode.subtree_end_id - cnode.preorder_id >= 7:
                 break
         topic_id_to_preorder_id[node.topic_num_id] = cnode.preorder_id
-        topic_id_to_subtree_end[node.topic_num_id] = cnode.subtree_end_id
+        topic_id_to_subtree_end[node.topic_num_id] = cnode.subtree_end_id """
     return last_id
 
 # topics should be the pandas dataframe for topics.
@@ -390,8 +390,8 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
     preorder_id_to_topics_restrict_id[right_side <= left_side] = len(topics_restrict)
 
     # at most 2GB VRAM. the full matrix is len(topics_restrict) x len(data_topics), so we need to cut it up into pieces.
-    max_topic_chunk = 536870912 // len(topics_restrict)
-    max_contents_chunk = 536870912 // len(topics_restrict)
+    max_topic_chunk = min(536870912 // len(topics_restrict), 10000)
+    max_contents_chunk = min(536870912 // len(topics_restrict), 10000)
 
     print("Chunk sizes: ", max_topic_chunk, " out of ", len(data_topics), "    ", max_contents_chunk, " out of ",
           len(contents_restrict))
@@ -460,7 +460,7 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
                     os.mkdir(topic_nid_folder)
                 saved_partitions[topic_num_id] = curp + 1
                 np.save(topic_nid_folder + str(curp) + ".npy", contents_restrict[has_cor_contents[left[k]:right[k]] + completed_contents_restrict])
-            
+
 
             del has_cor_contents, has_cor_topics, left, right, topic_mats
             # end of searching from [completed, content_load_end)
@@ -477,7 +477,10 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
 
 
     del topics_inv_map, topic_id_to_subtree_start, topic_id_to_subtree_end, preorder_id_to_topic_id, preorder_id_to_topics_restrict_id
-    shutil.rmtree(acceptances_folder)
+    try:
+        shutil.rmtree(acceptances_folder)
+    except OSError:
+        print("ERROR - unable to delete acceptances folder: ", acceptances_folder)
 
     ctime = time.time()
     for topic_num_id in range(len(data_topics)):

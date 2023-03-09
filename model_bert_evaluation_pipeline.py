@@ -428,9 +428,9 @@ def obtain_topic_based_probas_stepup_dimreduce(proba_callback, topics_restrict, 
             topics_pred_id = topics_tuple_chunk[:batch_size]
             contents_pred_id = contents_tuple_chunk[:batch_size]
             try:
-                probabilities = predict_probabilities_direct_gpu2(proba_callback, tf.constant(topics_pred_id),
+                probabilities = predict_probabilities_direct_gpu2_stepup_dimreduce(proba_callback, tf.constant(topics_pred_id),
                                                                   tf.constant(contents_pred_id),
-                                                                  full_topics_data, full_contents_data)
+                                                                  full_topics_d1, full_contents_d1, full_topics_d1fp, full_contents_d1fp)
             except tf.errors.ResourceExhaustedError as err:
                 probabilities = None
             if probabilities is not None:
