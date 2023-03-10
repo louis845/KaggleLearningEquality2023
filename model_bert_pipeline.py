@@ -187,8 +187,8 @@ def train_model_stepup_dimreduce(model_name, custom_metrics = None, custom_stopp
     del model, training_sampler
 
 def train_model_3stepup(model_name, custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None, custom_tuple_choice_sampler_overshoot = None,
-                        init_noise_topics=0.05, init_noise_overshoot_topics=0.2, init_noise_dampen_topics=0.05,
-                        init_noise_contents=0.05, init_noise_overshoot_contents=0.2, init_noise_dampen_contents=0.05,
+                        init_noise_topics=0.05, init_noise_overshoot_topics=0.2, init_noise_dampen_topics=0.2,
+                        init_noise_contents=0.05, init_noise_overshoot_contents=0.2, init_noise_dampen_contents=0.2,
                         init_noise_lang=0.2, init_noise_overshoot_lang=0.3, init_noise_dampen_lang=0.3,
                         weight_decay = 0.0002):
     model = model_bert_fix_3stepup.Model(units_size = 512, init_noise_topics = init_noise_topics, init_noise_overshoot_topics = init_noise_overshoot_topics,
@@ -204,7 +204,7 @@ def train_model_3stepup(model_name, custom_metrics = None, custom_stopping_func 
                                    contents_one_hot_file = config.resources_path + "one_hot_languages/contents_lang_train.npy",
                                    topics_one_hot_file = config.resources_path + "one_hot_languages/topics_lang_train.npy", device = "cpu")
     print("postsampler")
-    model.compile(weight_decay = weight_decay, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.01, decay_steps = 5000, alpha = 0.005)) # 0.0005
+    model.compile(weight_decay = weight_decay, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.0002, decay_steps = 5000, alpha = 0.01)) # 0.0005
     if custom_metrics is None:
         custom_metrics = model_bert_fix_3stepup.default_metrics
     if custom_stopping_func is None:
@@ -220,7 +220,7 @@ def train_model_3stepup(model_name, custom_metrics = None, custom_stopping_func 
     callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_file, save_weights_only = False, verbose = 0, save_freq = 10)
     csv_logger = tf.keras.callbacks.CSVLogger(logging_file, separator=',', append=False)
 
-    hist = model.fit(np.array([1, 2]), epochs = 6000, callbacks=[callback, csv_logger], verbose = 2, steps_per_epoch = 1)
+    hist = model.fit(np.array([1, 2]), epochs = 1500, callbacks=[callback, csv_logger], verbose = 2, steps_per_epoch = 1)
     ctime = time.time() - ctime
     print("finished first stepup time")
     print(ctime)
@@ -237,7 +237,7 @@ tuple_choice_sampler = data_bert_sampler.MixedSampler(sampler_list = [data_bert_
 metrics = model_bert_fix.obtain_overshoot_metric_instance(tuple_choice_sampler)
 train_model("overshoot23", custom_metrics = metrics, custom_tuple_choice_sampler =  tuple_choice_sampler)"""
 
-train_model_3stepup("minilm12_eng_model_3stepup")
+train_model_3stepup("minilm12_eng_model_3stepup_dampen_os_long_train")
 
 """tuple_choice_sampler = data_bert_sampler.default_sampler_instance
 tuple_choice_sampler_overshoot = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance])

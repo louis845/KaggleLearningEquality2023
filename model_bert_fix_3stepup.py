@@ -1,6 +1,7 @@
 import time
 
 import data_bert
+import data_bert_restriction
 import data_bert_tree_struct
 import model_bert_fix
 import tensorflow as tf
@@ -9,16 +10,13 @@ import config
 import gc
 import data_bert_sampler
 
-
-default_dampening_sampler_instance = data_bert_sampler.DampeningSampler(config.resources_path + "model_eval_tree/" + "topics_tree_overshoot_small_trained_on_train_eval_train_COMBINE/",
-                                                                              config.resources_path + "model_eval_tree/" + "topics_tree_overshoot_small_trained_on_train_eval_test_COMBINE/",
-                                                                              config.resources_path + "model_eval_tree/" + "topics_tree_overshoot_small_trained_on_train_cors_topics.npy",
-                                                                              config.resources_path + "model_eval_tree/" + "topics_tree_overshoot_small_trained_on_train_cors_contents.npy")
+data_bert_restriction.generate_info_from_folder(config.resources_path + "model_eval_tree/" + "topics_tree_overshoot_small_trained_on_train_eval_train_COMBINE/",
+        config.resources_path + "model_eval_tree/" + "topics_tree_overshoot_small_trained_on_train_eval_test_COMBINE/")
 
 class Model(tf.keras.Model):
     # only the argument units_size define the shape of the model. the argument training_sampler is used for training only.
-    def __init__(self, units_size=512, init_noise_topics=0.05, init_noise_overshoot_topics=0.2, init_noise_dampen_topics=0.05,
-                 init_noise_contents=0.05, init_noise_overshoot_contents=0.2, init_noise_dampen_contents=0.05,
+    def __init__(self, units_size=512, init_noise_topics=0.05, init_noise_overshoot_topics=0.2, init_noise_dampen_topics=0.2,
+                 init_noise_contents=0.05, init_noise_overshoot_contents=0.2, init_noise_dampen_contents=0.2,
                  init_noise_lang=0.2, init_noise_overshoot_lang=0.3, init_noise_dampen_lang=0.3):
         super(Model, self).__init__()
 
@@ -179,7 +177,8 @@ class Model(tf.keras.Model):
         self.tuple_choice_sampler_overshoot = data_bert_sampler.default_sampler_overshoot2_instance
 
         # generates the dampening functions
-        self.tuple_choice_sampler_dampen = default_dampening_sampler_instance
+        self.tuple_choice_sampler_dampen = data_bert_restriction.default_dampening_sampler_instance
+        self.tuple_choice_sampler_dampen_overshoot = data_bert_restriction.default_dampening_sampler_overshoot2_instance
 
     def set_training_params(self, training_sample_size=15000, training_max_size=None,
                             training_sampler=None, custom_metrics=None, custom_stopping_func=None,
@@ -229,12 +228,12 @@ class Model(tf.keras.Model):
             ratio3 = 7.0 / 15
 
             topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
-                int(ratio1 * self.training_sample_size) // 2)
+                int(ratio1 * self.training_sample_size) // 8)
             topics_, contents_, cors_, class_ids_ = self.tuple_choice_sampler_dampen.obtain_train_sample(
-                int(ratio1 * self.training_sample_size) // 2)
+                int(7 * ratio1 * self.training_sample_size) // 8)
             topics2, contents2, cors2, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
                 int(ratio2 * self.training_sample_size))
-            topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen.obtain_train_sample(
+            topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen_overshoot.obtain_train_sample(
                 int(ratio3 * self.training_sample_size))
 
             del cors, cors2, cors3, cors_, class_ids, class_ids_, class_ids2, class_ids3
@@ -244,7 +243,7 @@ class Model(tf.keras.Model):
 
             y1 = self.tuple_choice_sampler.has_correlations(contents, topics, None)
             y2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, None)
-            y3 = self.tuple_choice_sampler_dampen.has_correlations(contents3, topics3, None)
+            y3 = self.tuple_choice_sampler_dampen_overshoot.has_correlations(contents3, topics3, None)
 
             y0 = np.tile(np.concatenate([y1, y2, y3]), 2)
             y = tf.constant(y0)
@@ -271,12 +270,12 @@ class Model(tf.keras.Model):
         ratio3 = 7.0 / 15
 
         topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
-            int(ratio1 * self.training_sample_size) // 2)
+            int(ratio1 * self.training_sample_size) // 8)
         topics_, contents_, cors_, class_ids_ = self.tuple_choice_sampler_dampen.obtain_train_sample(
-            int(ratio1 * self.training_sample_size) // 2)
+            int(7 * ratio1 * self.training_sample_size) // 8)
         topics2, contents2, cors2, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
             int(ratio2 * self.training_sample_size))
-        topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen.obtain_train_sample(
+        topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen_overshoot.obtain_train_sample(
             int(ratio3 * self.training_sample_size))
 
         del cors, cors2, cors3, cors_, class_ids, class_ids_, class_ids2, class_ids3
@@ -286,7 +285,7 @@ class Model(tf.keras.Model):
 
         y1 = self.tuple_choice_sampler.has_correlations(contents, topics, None)
         y2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, None)
-        y3 = self.tuple_choice_sampler_dampen.has_correlations(contents3, topics3, None)
+        y3 = self.tuple_choice_sampler_dampen_overshoot.has_correlations(contents3, topics3, None)
 
         y0 = np.tile(np.concatenate([y1, y2, y3]), 2)
         y = tf.constant(y0)
@@ -322,8 +321,6 @@ class Model(tf.keras.Model):
         # early stopping
         if (self.custom_stopping_func is not None) and self.custom_stopping_func.evaluate(self.custom_metrics, self):
             self.stop_training = True
-
-        data_bert_sampler.global_epoch += 1
 
         return {**{m.name: m.result() for m in self.metrics},
                 "entropy_large_set": self.entropy_large_set.result(), **self.custom_metrics.obtain_metrics()}
@@ -370,13 +367,13 @@ class DynamicMetrics(model_bert_fix.CustomMetrics):
             sampler = self.metrics[k]["sampler"]
             sample_choice = self.metrics[k]["sample_choice"]
 
-            if sample_choice == DynamicMetrics.TRAIN:
+            if (sample_choice == DynamicMetrics.TRAIN or sample_choice == DynamicMetrics.TRAIN_OVERSHOOT or sample_choice == DynamicMetrics.TRAIN_DAMPEN):
                 topics, contents, cors, class_id = sampler.obtain_train_sample(min(60000, sample_size_limit))
-            elif sample_choice == DynamicMetrics.TRAIN_SQUARE:
+            elif (sample_choice == DynamicMetrics.TRAIN_SQUARE or sample_choice == DynamicMetrics.TRAIN_SQUARE_OVERSHOOT or sample_choice == DynamicMetrics.TRAIN_SQUARE_DAMPEN):
                 topics, contents, cors, class_id = sampler.obtain_train_square_sample(min(360000, sample_size_limit))
-            elif sample_choice == DynamicMetrics.TEST:
+            elif (sample_choice == DynamicMetrics.TEST or sample_choice == DynamicMetrics.TEST_OVERSHOOT or sample_choice == DynamicMetrics.TEST_DAMPEN):
                 topics, contents, cors, class_id = sampler.obtain_test_sample(min(60000, sample_size_limit))
-            elif sample_choice == DynamicMetrics.TEST_SQUARE:
+            elif (sample_choice == DynamicMetrics.TEST_SQUARE or sample_choice == DynamicMetrics.TEST_SQUARE_OVERSHOOT or sample_choice == DynamicMetrics.TEST_SQUARE_DAMPEN):
                 topics, contents, cors, class_id = sampler.obtain_test_square_sample(min(360000, sample_size_limit))
 
             y = tf.constant(cors, dtype=tf.float32)
@@ -422,9 +419,9 @@ class DynamicMetrics(model_bert_fix.CustomMetrics):
 
 default_metrics = DynamicMetrics()
 default_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST)
-default_metrics.add_metric("test_final_dampen", default_dampening_sampler_instance, sample_choice = DynamicMetrics.TEST)
+default_metrics.add_metric("test_final_dampen", data_bert_restriction.default_dampening_sampler_instance, sample_choice = DynamicMetrics.TEST)
 default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
 default_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
-default_metrics.add_metric("test_dampen", default_dampening_sampler_instance, sample_choice = DynamicMetrics.TEST_DAMPEN)
-default_metrics.add_metric("test_dampen_usual", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_DAMPEN)
-default_metrics.add_metric("test_square_dampen", default_dampening_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE_DAMPEN)
+default_metrics.add_metric("test_dampen", data_bert_restriction.default_dampening_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_DAMPEN)
+default_metrics.add_metric("test_dampen_usual", data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_DAMPEN)
+default_metrics.add_metric("test_square_dampen", data_bert_restriction.default_dampening_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_SQUARE_DAMPEN)
