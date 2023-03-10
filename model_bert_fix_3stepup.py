@@ -145,12 +145,12 @@ class Model(tf.keras.Model):
         overshoot_full_result = self.dropout5_os(self.dense5_os(t), training=training)
         overshoot_result = self.finalOvershoot(overshoot_full_result)
 
-        t = self.dropout1_os(self.dense1_os(first_layer_dampen), training=training)
-        t = self.dropout2_os(self.dense2_os(t), training=training)
-        t = self.dropout3_os(self.dense3_os(t), training=training)
-        t = self.dropout4_os(self.dense4_os(t), training=training)
-        dampen_full_result = self.dropout5_os(self.dense5_os(t), training=training)
-        dampen_result = self.finalOvershoot(dampen_full_result)
+        t = self.dropout1_dp(self.dense1_dp(first_layer_dampen), training=training)
+        t = self.dropout2_dp(self.dense2_dp(t), training=training)
+        t = self.dropout3_dp(self.dense3_dp(t), training=training)
+        t = self.dropout4_dp(self.dense4_dp(t), training=training)
+        dampen_full_result = self.dropout5_dp(self.dense5_dp(t), training=training)
+        dampen_result = self.finalDampen(dampen_full_result)
 
         t = self.dropout1_fp(self.dense1_fp(tf.concat([
             first_layer2, overshoot_full_result, dampen_full_result

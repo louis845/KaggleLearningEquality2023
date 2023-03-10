@@ -118,14 +118,14 @@ class DampeningSampler(SamplerBase):
         self.test_averages = self.test_file_lengths.astype(dtype=np.float64) / self.test_file_lengths.sum()
 
         self.train_content_ids = np.memmap("temp_train_contents.mmap", dtype=np.int32,
-                                           shape=self.train_file_lengths.sum(), mode="r")
+                                           shape=self.train_file_lengths.sum(), mode="w+")
         self.train_topic_ids = np.memmap("temp_train_topics.mmap", dtype=np.int32,
-                                         shape=self.train_file_lengths.sum(), mode="r")
+                                         shape=self.train_file_lengths.sum(), mode="w+")
 
         self.test_content_ids = np.memmap("temp_test_contents.mmap", dtype=np.int32,
-                                           shape=self.test_file_lengths.sum(), mode="r")
+                                           shape=self.test_file_lengths.sum(), mode="w+")
         self.test_topic_ids = np.memmap("temp_test_topics.mmap", dtype=np.int32,
-                                         shape=self.test_file_lengths.sum(), mode="r")
+                                         shape=self.test_file_lengths.sum(), mode="w+")
 
         rval = 0
         for k in range(len(self.train_averages)):
