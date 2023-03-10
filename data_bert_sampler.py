@@ -125,12 +125,27 @@ class DampeningSampler(SamplerBase):
         self.test_topic_ids = np.memmap("temp_test_topics.mmap", dtype=np.int32,
                                          shape=self.test_file_lengths.sum(), mode="w+")
 
-        self.train_content_ids = None
-        self.train_topic_ids = None
-        self.test_content_ids = None
-        self.test_topic_ids = None
+        rval = 0
+        for k in range(len(self.train_averages)):
+            self.train_content_ids[rval:rval+self.train_file_lengths[k]] = np.load(self.combined_train_folder + str(k) + "_contents.npy")
+            self.train_topic_ids[rval:rval + self.train_file_lengths[k]] = np.load(self.combined_train_folder + str(k) + "_topics.npy")
+            rval += self.train_file_lengths[k]
+            self.train_content_ids.flush()
+            self.train_topic_ids.flush()
+
+        rval = 0
+        for k in range(len(self.test_averages)):
+            self.test_content_ids[rval:rval + self.test_file_lengths[k]] = np.load(
+                self.combined_test_folder + str(k) + "_contents.npy")
+            self.test_topic_ids[rval:rval + self.test_file_lengths[k]] = np.load(
+                self.combined_test_folder + str(k) + "_topics.npy")
+            rval += self.test_file_lengths[k]
+            self.test_content_ids.flush()
+            self.test_topic_ids.flush()
+
         self.prev_epoch = 0
-        self.draw_new_train_test()
+
+        self.choice_gen = np.random.default_rng()
 
     def draw_new_train_test(self):
         del self.train_content_ids, self.train_topic_ids, self.test_content_ids, self.test_topic_ids
@@ -147,7 +162,7 @@ class DampeningSampler(SamplerBase):
 
     # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
     def obtain_train_sample(self, sample_size):
-        has_cor_choice = np.random.choice(len(self.has_cor_train_topics), sample_size // 2, replace=False)
+        has_cor_choice = self.choice_gen.choice(len(self.has_cor_train_topics), sample_size // 2, replace=False)
         topics = self.has_cor_train_topics[has_cor_choice]
         contents = self.has_cor_train_contents[has_cor_choice]
         cors = np.ones(len(topics))
@@ -161,7 +176,7 @@ class DampeningSampler(SamplerBase):
 
     # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
     def obtain_test_sample(self, sample_size):
-        has_cor_choice = np.random.choice(len(self.has_cor_test_topics), sample_size // 2, replace=False)
+        has_cor_choice = self.choice_gen.choice(len(self.has_cor_test_topics), sample_size // 2, replace=False)
         topics = self.has_cor_test_topics[has_cor_choice]
         contents = self.has_cor_test_contents[has_cor_choice]
         cors = np.ones(len(topics))
@@ -175,20 +190,20 @@ class DampeningSampler(SamplerBase):
 
     # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
     def obtain_train_square_sample(self, sample_size):
-        if global_epoch > self.prev_epoch:
+        """if global_epoch > self.prev_epoch:
             self.draw_new_train_test()
-            self.prev_epoch = global_epoch
-        choice = np.random.choice(len(self.train_content_ids), sample_size, replace=False)
+            self.prev_epoch = global_epoch """
+        choice = self.choice_gen.choice(len(self.train_content_ids), sample_size, replace=False)
         contents = self.train_content_ids[choice]
         topics = self.train_topic_ids[choice]
         return topics, contents, data_bert.has_correlations(contents, topics), None
 
     # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
     def obtain_test_square_sample(self, sample_size):
-        if global_epoch > self.prev_epoch:
+        """if global_epoch > self.prev_epoch:
             self.draw_new_train_test()
-            self.prev_epoch = global_epoch
-        choice = np.random.choice(len(self.test_content_ids), sample_size, replace=False)
+            self.prev_epoch = global_epoch """
+        choice = self.choice_gen.choice(len(self.test_content_ids), sample_size, replace=False)
         contents = self.test_content_ids[choice]
         topics = self.test_topic_ids[choice]
         return topics, contents, data_bert.has_correlations(contents, topics), None
@@ -364,7 +379,7 @@ class DefaultTreeSampler(SamplerBase):
             assert len(sample_tree_verification_functions)-1 == len(sample_tree_abundances_train)
             assert len(sample_tree_abundances_train) == len(sample_tree_abundances_test)
             assert len(sample_tree_abundances_test) == len(generation_sizes)
-            
+
             self.sample_tree_generation_functions = sample_tree_generation_functions
             self.sample_tree_verification_functions = sample_tree_verification_functions
             self.sample_tree_abundances_train = sample_tree_abundances_train
