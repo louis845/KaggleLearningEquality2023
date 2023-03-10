@@ -3,6 +3,8 @@
 # disjoint subsets, where the samples from each subset are drawn from different respective overshoot samples.
 import gc
 import math
+import time
+
 import numpy as np
 import data_bert
 import data_bert_tree_struct
@@ -127,14 +129,18 @@ class DampeningSampler(SamplerBase):
 
         rval = 0
         for k in range(len(self.train_averages)):
+            ctime = time.time()
             self.train_content_ids[rval:rval+self.train_file_lengths[k]] = np.load(self.combined_train_folder + str(k) + "_contents.npy")
             self.train_topic_ids[rval:rval + self.train_file_lengths[k]] = np.load(self.combined_train_folder + str(k) + "_topics.npy")
             rval += self.train_file_lengths[k]
             self.train_content_ids.flush()
             self.train_topic_ids.flush()
+            ctime = time.time() - ctime
+            print("Loaded ", k, "for train averages.   Time:", ctime)
 
         rval = 0
         for k in range(len(self.test_averages)):
+            ctime = time.time()
             self.test_content_ids[rval:rval + self.test_file_lengths[k]] = np.load(
                 self.combined_test_folder + str(k) + "_contents.npy")
             self.test_topic_ids[rval:rval + self.test_file_lengths[k]] = np.load(
@@ -142,6 +148,8 @@ class DampeningSampler(SamplerBase):
             rval += self.test_file_lengths[k]
             self.test_content_ids.flush()
             self.test_topic_ids.flush()
+            ctime = time.time() - ctime
+            print("Loaded ", k, "for train averages.   Time:", ctime)
 
         self.prev_epoch = 0
 

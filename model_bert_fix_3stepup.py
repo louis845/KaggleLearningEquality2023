@@ -238,7 +238,7 @@ class Model(tf.keras.Model):
             topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen.obtain_train_sample(
                 int(ratio3 * self.training_sample_size))
             ctime = time.time() - ctime
-            # print("Sampling time used: ", ctime)
+            print("Sampling time used: ", ctime)
 
             del cors, cors2, cors3, cors_, class_ids, class_ids_, class_ids2, class_ids3
 
