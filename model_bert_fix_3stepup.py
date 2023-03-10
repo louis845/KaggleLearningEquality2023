@@ -238,7 +238,7 @@ class Model(tf.keras.Model):
             topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen.obtain_train_sample(
                 int(ratio3 * self.training_sample_size))
             ctime = time.time() - ctime
-            print("Sampling time used: ", ctime)
+            # print("Sampling time used: ", ctime)
 
             del cors, cors2, cors3, cors_, class_ids, class_ids_, class_ids2, class_ids3
 
@@ -261,9 +261,6 @@ class Model(tf.keras.Model):
             ctime = time.time()
             self.call_optim_step(input_data, y, len(y1), len(y1) + len(y2), len(y1) + len(y2) + len(y3))
             ctime = time.time() - ctime
-            print("Step time used: ", ctime)
-
-            print("FINISHED ", k)
 
         if self.training_max_size is None:
             limit = 9223372036854775807
