@@ -1,11 +1,15 @@
 # class to manage sampling and correlation verification. this class is the most general sampling from data method, which
 # supports sampling from overshoot samples, tree samples and so on. also, it supports dividing the sampled parts into
 # disjoint subsets, where the samples from each subset are drawn from different respective overshoot samples.
+import gc
 import math
 import numpy as np
 import data_bert
 import data_bert_tree_struct
 
+import data_bert_hacky_disable_tree_struct
+
+global_epoch = 0
 
 class SamplerBase:
 
@@ -108,8 +112,38 @@ class DampeningSampler(SamplerBase):
         self.train_file_lengths = np.load(self.combined_train_folder + "saved_files_lengths.npy")
         self.test_file_lengths = np.load(self.combined_test_folder + "saved_files_lengths.npy")
 
-        self.train_averages = self.train_file_lengths.astype(dtype=np.float32) / self.train_file_lengths.sum()
-        self.test_averages = self.test_file_lengths.astype(dtype=np.float32) / self.test_file_lengths.sum()
+        self.train_averages = self.train_file_lengths.astype(dtype=np.float64) / self.train_file_lengths.sum()
+        self.test_averages = self.test_file_lengths.astype(dtype=np.float64) / self.test_file_lengths.sum()
+
+        self.train_content_ids = np.memmap("temp_train_contents.mmap", dtype=np.int32,
+                                           shape=self.train_file_lengths.sum(), mode="w+")
+        self.train_topic_ids = np.memmap("temp_train_topics.mmap", dtype=np.int32,
+                                         shape=self.train_file_lengths.sum(), mode="w+")
+
+        self.test_content_ids = np.memmap("temp_test_contents.mmap", dtype=np.int32,
+                                           shape=self.test_file_lengths.sum(), mode="w+")
+        self.test_topic_ids = np.memmap("temp_test_topics.mmap", dtype=np.int32,
+                                         shape=self.test_file_lengths.sum(), mode="w+")
+
+        self.train_content_ids = None
+        self.train_topic_ids = None
+        self.test_content_ids = None
+        self.test_topic_ids = None
+        self.prev_epoch = 0
+        self.draw_new_train_test()
+
+    def draw_new_train_test(self):
+        del self.train_content_ids, self.train_topic_ids, self.test_content_ids, self.test_topic_ids
+
+        k1 = np.random.choice(len(self.train_averages), p=self.train_averages)
+        self.train_content_ids = np.load(self.combined_train_folder + str(k1) + "_contents.npy")
+        self.train_topic_ids = np.load(self.combined_train_folder + str(k1) + "_topics.npy")
+
+        k2 = np.random.choice(len(self.test_averages), p=self.test_averages)
+        self.test_content_ids = np.load(self.combined_test_folder + str(k2) + "_contents.npy")
+        self.test_topic_ids = np.load(self.combined_test_folder + str(k2) + "_topics.npy")
+
+        print("Loading new train set................", k1, "    ", k2)
 
     # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
     def obtain_train_sample(self, sample_size):
@@ -141,46 +175,22 @@ class DampeningSampler(SamplerBase):
 
     # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
     def obtain_train_square_sample(self, sample_size):
-        topics = []
-        contents = []
-
-        occs = np.random.choice(len(self.train_averages), sample_size, p=self.train_averages)
-        occurences = [(occs == k).sum() for k in range(len(self.train_averages))]
-        del occs
-        for k in range(len(self.train_averages)):
-            if occurences[k] > 0:
-                content_ids = np.load(self.combined_train_folder + str(k) + "_contents.npy")
-                topic_ids = np.load(self.combined_train_folder + str(k) + "_topics.npy")
-                choice = np.random.choice(len(content_ids), occurences[k], replace=False)
-
-                contents.extend(list(content_ids[choice]))
-                topics.extend(list(topic_ids[choice]))
-
-                del content_ids, topic_ids, choice
-        topics = np.array(topics, dtype=np.int32)
-        contents = np.array(contents, dtype=np.int32)
+        if global_epoch > self.prev_epoch:
+            self.draw_new_train_test()
+            self.prev_epoch = global_epoch
+        choice = np.random.choice(len(self.train_content_ids), sample_size, replace=False)
+        contents = self.train_content_ids[choice]
+        topics = self.train_topic_ids[choice]
         return topics, contents, data_bert.has_correlations(contents, topics), None
 
     # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
     def obtain_test_square_sample(self, sample_size):
-        topics = []
-        contents = []
-
-        occs = np.random.choice(len(self.test_averages), sample_size, p=self.test_averages)
-        occurences = [(occs == k).sum() for k in range(len(self.test_averages))]
-        del occs
-        for k in range(len(self.test_averages)):
-            if occurences[k] > 0:
-                content_ids = np.load(self.combined_test_folder + str(k) + "_contents.npy")
-                topic_ids = np.load(self.combined_test_folder + str(k) + "_topics.npy")
-                choice = np.random.choice(len(content_ids), occurences[k], replace=False)
-
-                contents.extend(list(content_ids[choice]))
-                topics.extend(list(topic_ids[choice]))
-
-                del content_ids, topic_ids, choice
-        topics = np.array(topics, dtype=np.int32)
-        contents = np.array(contents, dtype=np.int32)
+        if global_epoch > self.prev_epoch:
+            self.draw_new_train_test()
+            self.prev_epoch = global_epoch
+        choice = np.random.choice(len(self.test_content_ids), sample_size, replace=False)
+        contents = self.test_content_ids[choice]
+        topics = self.test_topic_ids[choice]
         return topics, contents, data_bert.has_correlations(contents, topics), None
 
     # given the (content_id, topic_id, class) tuple, determine whether or not there is a correlation between them.
@@ -676,23 +686,25 @@ default_sampler_overshoot3_instance = DefaultSampler(sample_generation_functions
                                                     },
                                                      sample_verification_function = data_bert_tree_struct.has_further_correlations)
 
-default_tree_sampler_instance = DefaultTreeSampler()
+if data_bert_hacky_disable_tree_struct.enable_tree_struct:
+    default_tree_sampler_instance = DefaultTreeSampler()
 
-overshoot_generation = default_tree_sampler_instance.sample_tree_generation_functions.copy()
-overshoot_generation[-1] = {
-                "train_sample": data_bert_tree_struct.obtain_train_sample,
-                "test_sample": data_bert_tree_struct.obtain_test_sample,
-                "train_square_sample": data_bert_tree_struct.obtain_train_square_sample,
-                "test_square_sample": data_bert_tree_struct.obtain_test_square_sample
-            }
-overshoot_veri = default_tree_sampler_instance.sample_tree_verification_functions.copy()
-overshoot_veri[-1] = data_bert_tree_struct.has_close_correlations
-default_tree_overshoot_sampler_instance = DefaultTreeSampler(sample_tree_generation_functions=overshoot_generation, sample_tree_verification_functions=overshoot_veri, sample_tree_abundances_train=data_bert_tree_struct.topic_trees_filtered_abundances_train,
-                                                             sample_tree_abundances_test=data_bert_tree_struct.topic_trees_filtered_abundances_test, generation_sizes=[4, 9, 10, 17, 17])
+    overshoot_generation = default_tree_sampler_instance.sample_tree_generation_functions.copy()
+    overshoot_generation[-1] = {
+                    "train_sample": data_bert_tree_struct.obtain_train_sample,
+                    "test_sample": data_bert_tree_struct.obtain_test_sample,
+                    "train_square_sample": data_bert_tree_struct.obtain_train_square_sample,
+                    "test_square_sample": data_bert_tree_struct.obtain_test_square_sample
+                }
+    overshoot_veri = default_tree_sampler_instance.sample_tree_verification_functions.copy()
+    overshoot_veri[-1] = data_bert_tree_struct.has_close_correlations
+    default_tree_overshoot_sampler_instance = DefaultTreeSampler(sample_tree_generation_functions=overshoot_generation, sample_tree_verification_functions=overshoot_veri, sample_tree_abundances_train=data_bert_tree_struct.topic_trees_filtered_abundances_train,
+                                                                 sample_tree_abundances_test=data_bert_tree_struct.topic_trees_filtered_abundances_test, generation_sizes=[4, 9, 10, 17, 17])
 
 default_reversed_sampler_instance = ReversedSampler(default_sampler_instance)
 default_reversed_sampler_overshoot2_instance = ReversedSampler(default_sampler_overshoot2_instance)
 default_reversed_sampler_overshoot3_instance = ReversedSampler(default_sampler_overshoot3_instance)
 
-default_reversed_tree_sampler = ReversedTreeSampler(default_tree_sampler_instance)
-default_reversed_tree_sampler_overshoot = ReversedTreeSampler(default_tree_overshoot_sampler_instance)
+if data_bert_hacky_disable_tree_struct.enable_tree_struct:
+    default_reversed_tree_sampler = ReversedTreeSampler(default_tree_sampler_instance)
+    default_reversed_tree_sampler_overshoot = ReversedTreeSampler(default_tree_overshoot_sampler_instance)

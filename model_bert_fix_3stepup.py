@@ -1,3 +1,5 @@
+import time
+
 import data_bert
 import data_bert_tree_struct
 import model_bert_fix
@@ -19,6 +21,8 @@ class Model(tf.keras.Model):
                  init_noise_contents=0.05, init_noise_overshoot_contents=0.2, init_noise_dampen_contents=0.05,
                  init_noise_lang=0.2, init_noise_overshoot_lang=0.3, init_noise_dampen_lang=0.3):
         super(Model, self).__init__()
+
+        self.units_size = units_size
 
         self.training_sampler = None
         self.training_max_size = None
@@ -177,9 +181,6 @@ class Model(tf.keras.Model):
         # generates the dampening functions
         self.tuple_choice_sampler_dampen = default_dampening_sampler_instance
 
-        s = self(self.tuple_choice_sampler.obtain_input_data(np.array([0]), np.array([0])))
-        del s
-
     def set_training_params(self, training_sample_size=15000, training_max_size=None,
                             training_sampler=None, custom_metrics=None, custom_stopping_func=None,
                             custom_tuple_choice_sampler=None, custom_tuple_choice_sampler_overshoot=None,
@@ -188,6 +189,8 @@ class Model(tf.keras.Model):
         self.training_max_size = training_max_size
         if training_sampler is not None:
             self.training_sampler = training_sampler
+            s = self(self.training_sampler.obtain_input_data(np.array([0]), np.array([0])))
+            del s
         if custom_metrics is not None:
             custom_metrics.set_training_sampler(self.training_sampler)
             self.custom_metrics = custom_metrics
@@ -213,6 +216,10 @@ class Model(tf.keras.Model):
         gradients = tape.gradient(loss, trainable_vars)
         self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 
+    @tf.function
+    def call_self(self, input_data):
+        return self(input_data)
+
     def train_step(self, data):
         if self.tuple_choice_sampler.is_tree_sampler():
             return self.train_step_tree()
@@ -221,6 +228,7 @@ class Model(tf.keras.Model):
             ratio2 = 7.0 / 15
             ratio3 = 7.0 / 15
 
+            ctime = time.time()
             topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
                 int(ratio1 * self.training_sample_size) // 2)
             topics_, contents_, cors_, class_ids_ = self.tuple_choice_sampler_dampen.obtain_train_sample(
@@ -229,15 +237,17 @@ class Model(tf.keras.Model):
                 int(ratio2 * self.training_sample_size))
             topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen.obtain_train_sample(
                 int(ratio3 * self.training_sample_size))
+            ctime = time.time() - ctime
+            print("Sampling time used: ", ctime)
 
             del cors, cors2, cors3, cors_, class_ids, class_ids_, class_ids2, class_ids3
 
             topics = np.concatenate([topics, topics_])
             contents = np.concatenate([contents, contents_])
 
-            y1 = self.tuple_choice_sampler.has_correlations(contents, topics, class_ids)
-            y2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, class_ids2)
-            y3 = self.tuple_choice_sampler_dampen.has_correlations(contents3, topics3, class_ids3)
+            y1 = self.tuple_choice_sampler.has_correlations(contents, topics, None)
+            y2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, None)
+            y3 = self.tuple_choice_sampler_dampen.has_correlations(contents3, topics3, None)
 
             y0 = np.tile(np.concatenate([y1, y2, y3]), 2)
             y = tf.constant(y0)
@@ -248,7 +258,12 @@ class Model(tf.keras.Model):
 
             input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
 
+            ctime = time.time()
             self.call_optim_step(input_data, y, len(y1), len(y1) + len(y2), len(y1) + len(y2) + len(y3))
+            ctime = time.time() - ctime
+            print("Step time used: ", ctime)
+
+            print("FINISHED ", k)
 
         if self.training_max_size is None:
             limit = 9223372036854775807
@@ -275,9 +290,9 @@ class Model(tf.keras.Model):
         topics = np.concatenate([topics, topics_])
         contents = np.concatenate([contents, contents_])
 
-        y1 = self.tuple_choice_sampler.has_correlations(contents, topics, class_ids)
-        y2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, class_ids2)
-        y3 = self.tuple_choice_sampler_dampen.has_correlations(contents3, topics3, class_ids3)
+        y1 = self.tuple_choice_sampler.has_correlations(contents, topics, None)
+        y2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, None)
+        y3 = self.tuple_choice_sampler_dampen.has_correlations(contents3, topics3, None)
 
         y0 = np.tile(np.concatenate([y1, y2, y3]), 2)
         y = tf.constant(y0)
@@ -287,7 +302,7 @@ class Model(tf.keras.Model):
 
         input_data = self.training_sampler.obtain_input_data_both(topics_id=topics, contents_id=contents)
 
-        y_pred = self(input_data)
+        y_pred = self.call_self(input_data)
         length1, length2, length3 = len(y1), len(y1) + len(y2), len(y1) + len(y2) + len(y3)
         y_pred = tf.concat([y_pred[:length1, 0], y_pred[length1:length2, 1],
                                            y_pred[length2:length3, 2],
@@ -313,6 +328,8 @@ class Model(tf.keras.Model):
         # early stopping
         if (self.custom_stopping_func is not None) and self.custom_stopping_func.evaluate(self.custom_metrics, self):
             self.stop_training = True
+
+        data_bert_sampler.global_epoch += 1
 
         return {**{m.name: m.result() for m in self.metrics},
                 "entropy_large_set": self.entropy_large_set.result(), **self.custom_metrics.obtain_metrics()}
@@ -372,21 +389,21 @@ class DynamicMetrics(model_bert_fix.CustomMetrics):
 
             input_data = self.training_sampler.obtain_input_data(topics_id=topics, contents_id=contents)
             if sample_choice <= 4:
-                y_pred = model(input_data)[:, 0]
+                y_pred = model.call_self(input_data)[:, 0]
             elif sample_choice <= 8:
-                y_pred = model(input_data)[:, 1]
+                y_pred = model.call_self(input_data)[:, 1]
             else:
-                y_pred = model(input_data)[:, 2]
+                y_pred = model.call_self(input_data)[:, 2]
             for j in range(4):
                 kmetrics[j].update_state(y, y_pred)
 
             input_data = self.training_sampler.obtain_input_data_filter_lang(topics_id=topics, contents_id=contents)
             if sample_choice <= 4:
-                y_pred = model(input_data)[:, 0]
+                y_pred = model.call_self(input_data)[:, 0]
             elif sample_choice <= 8:
-                y_pred = model(input_data)[:, 1]
+                y_pred = model.call_self(input_data)[:, 1]
             else:
-                y_pred = model(input_data)[:, 2]
+                y_pred = model.call_self(input_data)[:, 2]
 
             for j in range(4,8):
                 kmetrics[j].update_state(y, y_pred)

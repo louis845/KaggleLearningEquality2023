@@ -28,6 +28,8 @@ import gc
 
 import data_bert_sampler
 
+import data_bert_hacky_disable_tree_struct
+
 
 class TrainingSampler:
     # loads the data as tf tensors from the folders specified. note that the embedded_vectors_folder require "/" at the end.
@@ -611,14 +613,15 @@ default_metrics = DynamicMetrics()
 default_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST)
 default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
 
-default_tree_metrics = DynamicMetrics()
-default_tree_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST)
-default_tree_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
-default_tree_metrics.add_tree_metric("treelv0", data_bert_sampler.default_tree_sampler_instance, level = 0, sample_choice = DynamicMetrics.TEST)
-default_tree_metrics.add_tree_metric("treelv1", data_bert_sampler.default_tree_sampler_instance, level = 1, sample_choice = DynamicMetrics.TEST)
-default_tree_metrics.add_tree_metric("treelv2", data_bert_sampler.default_tree_sampler_instance, level = 2, sample_choice = DynamicMetrics.TEST)
-default_tree_metrics.add_tree_metric("treelv3", data_bert_sampler.default_tree_sampler_instance, level = 3, sample_choice = DynamicMetrics.TEST)
-default_tree_metrics.add_tree_metric("treelv4", data_bert_sampler.default_tree_sampler_instance, level = 4, sample_choice = DynamicMetrics.TEST)
+if data_bert_hacky_disable_tree_struct.enable_tree_struct:
+    default_tree_metrics = DynamicMetrics()
+    default_tree_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST)
+    default_tree_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
+    default_tree_metrics.add_tree_metric("treelv0", data_bert_sampler.default_tree_sampler_instance, level = 0, sample_choice = DynamicMetrics.TEST)
+    default_tree_metrics.add_tree_metric("treelv1", data_bert_sampler.default_tree_sampler_instance, level = 1, sample_choice = DynamicMetrics.TEST)
+    default_tree_metrics.add_tree_metric("treelv2", data_bert_sampler.default_tree_sampler_instance, level = 2, sample_choice = DynamicMetrics.TEST)
+    default_tree_metrics.add_tree_metric("treelv3", data_bert_sampler.default_tree_sampler_instance, level = 3, sample_choice = DynamicMetrics.TEST)
+    default_tree_metrics.add_tree_metric("treelv4", data_bert_sampler.default_tree_sampler_instance, level = 4, sample_choice = DynamicMetrics.TEST)
 
 # create overshoot metrics, given the sampler used for selecting the tuples
 def obtain_overshoot_metric_instance(training_tuple_sampler):
