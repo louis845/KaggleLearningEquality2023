@@ -404,6 +404,26 @@ class Model(tf.keras.Model):
     def metrics(self):
         return [self.accuracy, self.precision, self.recall, self.entropy]
 
+class NoMetrics(model_bert_fix.CustomMetrics):
+    def __init__(self):
+        model_bert_fix.CustomMetrics.__init__(self)
+
+    def update_metrics(self, model, sample_size_limit):
+        pass
+
+    # returns a dictionary containing the last evaluation of the metrics, and the model
+    def obtain_metrics(self):
+        return {"NoMetricsUsed":1.0}
+
+    def get_test_entropy_metric(self):
+        return 10.0
+
+    def get_test_overshoot_entropy_metric(self):
+        return 10.0
+
+    def get_total_tree_metric(self):
+        return 10.0
+
 class DynamicMetrics(model_bert_fix.CustomMetrics):
 
     TRAIN = 1

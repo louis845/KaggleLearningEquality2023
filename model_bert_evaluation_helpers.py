@@ -31,11 +31,20 @@ def evaluate_topk_from_performance(topk_preds, topics_restrict, contents_restric
                 row_tn = len(contents_restrict) - row_fp
                 # here true positive and false negative are zero
 
-            if row_tp == 0:
-                row_recall, row_precision, row_f2 = 0,0,0
+            if row_tp == 0 and row_fn == 0:
+                row_recall = 1
             else:
                 row_recall = (row_tp + 0.0) / (row_tp + row_fn)
+            if row_tp == 0 and row_fp == 0:
+                if row_tp == 0 and row_fn == 0:
+                    row_precision = 1
+                else:
+                    row_precision = 0
+            else:
                 row_precision = (row_tp + 0.0) / (row_tp + row_fp)
+            if row_precision == 0 and row_recall == 0:
+                row_f2 = 0
+            else:
                 row_f2 = 5.0 * row_precision * row_recall / (4.0 * row_precision + row_recall)
             row_accuracy = (row_tp + row_tn + 0.0) / len(contents_restrict)
 
@@ -109,11 +118,20 @@ def evaluate_topk_from_performance_format2(topk_preds, topics_restrict, contents
                 row_tn = len(contents_restrict) - row_fp
                 # here true positive and false negative are zero
 
-            if row_tp == 0:
-                row_recall, row_precision, row_f2 = 0,0,0
+            if row_tp == 0 and row_fn == 0:
+                row_recall = 1
             else:
                 row_recall = (row_tp + 0.0) / (row_tp + row_fn)
+            if row_tp == 0 and row_fp == 0:
+                if row_tp == 0 and row_fn == 0:
+                    row_precision = 1
+                else:
+                    row_precision = 0
+            else:
                 row_precision = (row_tp + 0.0) / (row_tp + row_fp)
+            if row_precision == 0 and row_recall == 0:
+                row_f2 = 0
+            else:
                 row_f2 = 5.0 * row_precision * row_recall / (4.0 * row_precision + row_recall)
             row_accuracy = (row_tp + row_tn + 0.0) / len(contents_restrict)
 
@@ -190,11 +208,20 @@ def evaluate_quality_from_cors_arr(topics_overshoot_mapping, topics_restrict, co
                 row_tn = len(contents_restrict) - row_fp
                 # here true positive and false negative are zero
 
-            if row_tp == 0:
-                row_recall, row_precision, row_f2 = 0,0,0
+            if row_tp == 0 and row_fn == 0:
+                row_recall = 1
             else:
                 row_recall = (row_tp + 0.0) / (row_tp + row_fn)
+            if row_tp == 0 and row_fp == 0:
+                if row_tp == 0 and row_fn == 0:
+                    row_precision = 1
+                else:
+                    row_precision = 0
+            else:
                 row_precision = (row_tp + 0.0) / (row_tp + row_fp)
+            if row_precision == 0 and row_recall == 0:
+                row_f2 = 0
+            else:
                 row_f2 = 5.0 * row_precision * row_recall / (4.0 * row_precision + row_recall)
             row_accuracy = (row_tp + row_tn + 0.0) / len(contents_restrict)
 

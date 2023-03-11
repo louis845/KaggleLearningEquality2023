@@ -45,10 +45,6 @@ class Model(tf.keras.Model):
         self.dense1_fp_right_matrix = None
         self.dense1_fp_residual_matrix = None
 
-    # for training, we feed in actual_y to overdetermine the predictions. if actual_y is not fed in,
-    # usual gradient descent will be used. actual_y should be a (batch_size x 2) numpy array, where
-    # the first column is for the full model prediction array, the second column for the intermediate
-    # prediction
     def call(self, data, training=False):
         t = self.dropout1(self.dense1(data), training=training)
         t = self.dropout2(self.dense2(t), training=training)
@@ -68,24 +64,6 @@ class Model(tf.keras.Model):
         t = self.dropout5_fp(self.dense5_fp(t), training=training)
         t = self.final(t)
         return tf.concat([tf.reduce_max(t, axis=1), tf.reduce_max(overshoot_result, axis=1)], axis=1)
-
-    def call_nonset_final_only(self, data):
-        t = self.dense1(data)
-        t = self.dense2(t)
-        t = self.dense3(t)
-        res_dropout4 = self.dense4(t)
-        overshoot_fullresult = self.denseOvershoot(res_dropout4)
-
-        t = self.dense1_fp(tf.concat([
-            data,
-            overshoot_fullresult
-        ], axis=-1))
-        t = self.dense2_fp(t)
-        t = self.dense3_fp(t)
-        t = self.dense4_fp(t)
-        t = self.dense5_fp(t)
-        t = self.final(t)
-        return tf.squeeze(t, axis=1)
 
     def call_nonset_final_only(self, data):
         t = self.dense1(data)

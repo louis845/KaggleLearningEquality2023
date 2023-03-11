@@ -395,6 +395,37 @@ def obtain_tree_test_square_sample(sample_size, k_level):
                     topic_trees_filtered_contents_test[k_level]["content_id"], topic_trees_filtered_contents_test[k_level]["topic_id_klevel"],
                     data_bert.test_contents_num_id, topics_group_filtered[k_level]["group_test_ids"])
 
+def obtain_tree_combined_sample(one_sample_size, zero_sample_size, k_level):
+    return data_bert.obtain_general_sample(one_sample_size, zero_sample_size,
+                    topic_trees_filtered_contents[k_level]["content_id"], topic_trees_filtered_contents[k_level]["topic_id_klevel"],
+                    data_bert.contents_availability_num_id, topics_group_filtered[k_level]["group_train_ids"])
+def obtain_tree_combined_square_sample(sample_size, k_level):
+    return data_bert.obtain_general_square_sample(sample_size,
+                    topic_trees_filtered_contents[k_level]["content_id"], topic_trees_filtered_contents[k_level]["topic_id_klevel"],
+                    data_bert.contents_availability_num_id, topics_group_filtered[k_level]["group_train_ids"])
+
+has_correlation_combined_contents = None
+has_correlation_combined_topics = None
+
+def generate_combined_cors_close():
+    global has_correlation_combined_contents, has_correlation_combined_topics
+    restrict1 = data_bert.fast_contains_multi(data_bert.contents_availability_num_id, has_close_correlation_contents)
+    has_correlation_combined_contents = has_close_correlation_contents[restrict1]
+    has_correlation_combined_topics = has_close_correlation_topics[restrict1]
+    restrict2 = data_bert.fast_contains_multi(data_bert.topics_availability_num_id, has_correlation_combined_topics)
+    has_correlation_combined_contents = has_correlation_combined_contents[restrict2]
+    has_correlation_combined_topics = has_correlation_combined_topics[restrict2]
+def obtain_combined_sample(one_sample_size, zero_sample_size):
+    if has_correlation_combined_contents is None:
+        generate_combined_cors_close()
+    return data_bert.obtain_general_sample(one_sample_size, zero_sample_size, has_correlation_combined_contents, has_correlation_combined_topics,
+                                           data_bert.contents_availability_num_id, data_bert.topics_availability_num_id)
+def obtain_combined_square_sample(sample_size):
+    if has_correlation_combined_contents is None:
+        generate_combined_cors_close()
+    return data_bert.obtain_general_square_sample(sample_size, has_correlation_combined_contents, has_correlation_combined_topics,
+                                                  data_bert.contents_availability_num_id, data_bert.topics_availability_num_id)
+
 dummy_topics_prod_list = np.empty(shape = len(data_bert.topics_inv_map), dtype = "object")
 
 for k in range(len(dummy_topics_prod_list)):

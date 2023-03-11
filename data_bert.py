@@ -224,4 +224,24 @@ def obtain_train_square_sample(sample_size):
 def obtain_test_square_sample(sample_size):
     return obtain_general_square_sample(sample_size, has_correlation_test_contents, has_correlation_test_topics, test_contents_num_id, test_topics_num_id)
 
+has_correlation_combined_contents = None
+has_correlation_combined_topics = None
+
+def generate_combined_cors():
+    global has_correlation_combined_contents, has_correlation_combined_topics
+    restrict1 = fast_contains_multi(contents_availability_num_id, has_correlation_contents)
+    has_correlation_combined_contents = has_correlation_contents[restrict1]
+    has_correlation_combined_topics = has_correlation_topics[restrict1]
+    restrict2 = fast_contains_multi(topics_availability_num_id, has_correlation_combined_topics)
+    has_correlation_combined_contents = has_correlation_combined_contents[restrict2]
+    has_correlation_combined_topics = has_correlation_combined_topics[restrict2]
+def obtain_combined_sample(one_sample_size, zero_sample_size):
+    if has_correlation_combined_contents is None:
+        generate_combined_cors()
+    return obtain_general_sample(one_sample_size, zero_sample_size, has_correlation_combined_contents, has_correlation_combined_topics, contents_availability_num_id, topics_availability_num_id)
+def obtain_combined_square_sample(sample_size):
+    if has_correlation_combined_contents is None:
+        generate_combined_cors()
+    return obtain_general_square_sample(sample_size, has_correlation_combined_contents, has_correlation_combined_topics, contents_availability_num_id, topics_availability_num_id)
+
 gc.collect()
