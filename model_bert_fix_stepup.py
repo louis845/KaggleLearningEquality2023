@@ -581,6 +581,12 @@ default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_inst
 default_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
 default_metrics.add_metric("test_square_overshoot", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_SQUARE_OVERSHOOT)
 
+default_reversed_metrics = DynamicMetrics()
+default_reversed_metrics.add_metric("test", data_bert_sampler.default_reversed_sampler_instance, data_bert_sampler.default_reversed_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST)
+default_reversed_metrics.add_metric("test_square", data_bert_sampler.default_reversed_sampler_instance, data_bert_sampler.default_reversed_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
+default_reversed_metrics.add_metric("test_overshoot", data_bert_sampler.default_reversed_sampler_instance, data_bert_sampler.default_reversed_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
+default_reversed_metrics.add_metric("test_square_overshoot", data_bert_sampler.default_reversed_sampler_instance, data_bert_sampler.default_reversed_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_SQUARE_OVERSHOOT)
+
 if data_bert_hacky_disable_tree_struct.enable_tree_struct:
     default_tree_metrics = DynamicMetrics()
     default_tree_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST)

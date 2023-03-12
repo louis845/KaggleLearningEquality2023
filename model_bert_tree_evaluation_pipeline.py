@@ -389,9 +389,9 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
     preorder_id_to_topics_restrict_id[right_side > left_side] = left_side[right_side > left_side]
     preorder_id_to_topics_restrict_id[right_side <= left_side] = len(topics_restrict)
 
-    # at most 2GB VRAM. the full matrix is len(topics_restrict) x len(data_topics), so we need to cut it up into pieces.
-    max_topic_chunk = min(536870912 // len(topics_restrict), 10000)
-    max_contents_chunk = min(536870912 // len(topics_restrict), 10000)
+    # at most 1GB VRAM. the full matrix is len(topics_restrict) x len(data_topics), so we need to cut it up into pieces.
+    max_topic_chunk = min(268435456 // len(topics_restrict), 10000)
+    max_contents_chunk = min(268435456 // len(topics_restrict), 10000)
 
     print("Chunk sizes: ", max_topic_chunk, " out of ", len(data_topics), "    ", max_contents_chunk, " out of ",
           len(contents_restrict))
@@ -449,7 +449,6 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
             left = np.searchsorted(has_cor_topics, topic_mats, side="left")
             right = np.searchsorted(has_cor_topics, topic_mats, side="right")
 
-            print("Length: ", len(topic_mats))
             for k in range(len(topic_mats)):
                 topic_mat = topic_mats[k]
 
