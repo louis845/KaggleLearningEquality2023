@@ -150,7 +150,7 @@ class Model(tf.keras.Model):
         t = tf.nn.relu(tf.nn.bias_add(left_d1fp + right_d1fp +
                                       tf.matmul(
                                           tf.concat([overshoot_full_result, dampen_full_result], axis=-1),
-                                      self.dense1_fp_residual_matrix),
+                                      self.dense1fp_residual_matrix),
                                 self.dense1_fp.weights[1]))
         t = self.dense2_fp(t)
         t = self.dense3_fp(t)
