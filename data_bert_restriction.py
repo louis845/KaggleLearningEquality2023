@@ -19,6 +19,14 @@ default_dampening_sampler_instance, default_dampening_sampler_overshoot2_instanc
 # adds the intersection of (contents_short_restriction, topics_short_restriction) and (contents_long_restriction, topics_long_restriction)
 # into the list.
 def add_potentials_into_list(contents_list, topics_list, contents_short_restriction, topics_short_restriction, contents_long_restriction, topics_long_restriction):
+    has_content = data_bert.fast_contains_multi(data_bert.contents_availability_num_id, contents_short_restriction)
+    contents_short_restriction = contents_short_restriction[has_content]
+    topics_short_restriction = topics_short_restriction[has_content]
+    del has_content
+    has_content = data_bert.fast_contains_multi(data_bert.topics_availability_num_id, topics_short_restriction)
+    contents_short_restriction = contents_short_restriction[has_content]
+    topics_short_restriction = topics_short_restriction[has_content]
+
     contains = data_bert.has_correlations_general(contents_short_restriction, topics_short_restriction, contents_long_restriction, topics_long_restriction).astype(dtype=bool)
     contents_list.extend(list(contents_short_restriction[contains]))
     topics_list.extend(list(topics_short_restriction[contains]))

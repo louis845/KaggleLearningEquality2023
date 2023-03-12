@@ -9,9 +9,13 @@ import numpy as np
 import config
 import gc
 import data_bert_sampler
+import sys
 
-data_bert_restriction.generate_info_from_folder(config.resources_path + "model_eval_tree/" + "topics_tree_overshoot_small_trained_on_train_eval_train_COMBINE/",
-        config.resources_path + "model_eval_tree/" + "topics_tree_overshoot_small_trained_on_train_eval_test_COMBINE/")
+print("RESTRICTION DATA:")
+print("Using train data: " + sys.argv[1])
+print("Using test data: " + sys.argv[2])
+data_bert_restriction.generate_info_from_folder(config.resources_path + "model_eval_tree/" + sys.argv[1] + "/",
+        config.resources_path + "model_eval_tree/" + sys.argv[2] + "/")
 
 class Model(tf.keras.Model):
     # only the argument units_size define the shape of the model. the argument training_sampler is used for training only.
@@ -228,9 +232,9 @@ class Model(tf.keras.Model):
             ratio3 = 7.0 / 15
 
             topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
-                int(ratio1 * self.training_sample_size) // 8)
+                int(0 * ratio1 * self.training_sample_size) // 8)
             topics_, contents_, cors_, class_ids_ = self.tuple_choice_sampler_dampen.obtain_train_sample(
-                int(7 * ratio1 * self.training_sample_size) // 8)
+                int(8 * ratio1 * self.training_sample_size) // 8)
             topics2, contents2, cors2, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
                 int(ratio2 * self.training_sample_size))
             topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen_overshoot.obtain_train_sample(
@@ -270,9 +274,9 @@ class Model(tf.keras.Model):
         ratio3 = 7.0 / 15
 
         topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
-            int(ratio1 * self.training_sample_size) // 8)
+            int(0 * ratio1 * self.training_sample_size) // 8)
         topics_, contents_, cors_, class_ids_ = self.tuple_choice_sampler_dampen.obtain_train_sample(
-            int(7 * ratio1 * self.training_sample_size) // 8)
+            int(8 * ratio1 * self.training_sample_size) // 8)
         topics2, contents2, cors2, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
             int(ratio2 * self.training_sample_size))
         topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen_overshoot.obtain_train_sample(
