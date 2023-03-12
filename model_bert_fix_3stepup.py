@@ -11,12 +11,6 @@ import gc
 import data_bert_sampler
 import sys
 
-print("RESTRICTION DATA:")
-print("Using train data: " + sys.argv[1])
-print("Using test data: " + sys.argv[2])
-data_bert_restriction.generate_info_from_folder(config.resources_path + "model_eval_tree/" + sys.argv[1] + "/",
-        config.resources_path + "model_eval_tree/" + sys.argv[2] + "/")
-
 class Model(tf.keras.Model):
     # only the argument units_size define the shape of the model. the argument training_sampler is used for training only.
     def __init__(self, units_size=512, init_noise_topics=0.05, init_noise_overshoot_topics=0.2, init_noise_dampen_topics=0.2,
@@ -93,9 +87,6 @@ class Model(tf.keras.Model):
         # metrics for test set
         self.custom_metrics = None
         self.custom_stopping_func = None
-
-        self.train_sample_generation = data_bert.obtain_train_sample
-        self.train_sample_square_generation = data_bert.obtain_train_sample
 
     # for training, we feed in actual_y to overdetermine the predictions. if actual_y is not fed in,
     # usual gradient descent will be used. actual_y should be a (batch_size x 2) numpy array, where
@@ -174,6 +165,7 @@ class Model(tf.keras.Model):
         self.training_zero_sample_size = 1000
         self.prev_entropy = None
 
+    def set_sampling_functions_with_pack(self, rspack: data_bert_restriction.RestrictionSamplerPack):
         # saves the functions that generates whether a tuple (topic, content) is correlated.
         self.tuple_choice_sampler = data_bert_sampler.default_sampler_instance
 
@@ -181,8 +173,20 @@ class Model(tf.keras.Model):
         self.tuple_choice_sampler_overshoot = data_bert_sampler.default_sampler_overshoot2_instance
 
         # generates the dampening functions
-        self.tuple_choice_sampler_dampen = data_bert_restriction.default_dampening_sampler_instance
-        self.tuple_choice_sampler_dampen_overshoot = data_bert_restriction.default_dampening_sampler_overshoot2_instance
+        self.tuple_choice_sampler_dampen = rspack.default_dampening_sampler_instance
+        self.tuple_choice_sampler_dampen_overshoot = rspack.default_dampening_sampler_overshoot2_instance
+
+    def set_sampling_functions_with_pack_interlaced(self, rspack: data_bert_restriction.RestrictionSamplerPack,
+                                                    rspack_overshoot: data_bert_restriction.RestrictionSamplerPack):
+        # saves the functions that generates whether a tuple (topic, content) is correlated.
+        self.tuple_choice_sampler = data_bert_sampler.default_sampler_instance
+
+        # generates the overshoot functions
+        self.tuple_choice_sampler_overshoot = data_bert_sampler.default_sampler_overshoot2_instance
+
+        # generates the dampening functions
+        self.tuple_choice_sampler_dampen = rspack.default_dampening_sampler_instance
+        self.tuple_choice_sampler_dampen_overshoot = rspack_overshoot.default_dampening_sampler_overshoot2_instance
 
     def set_training_params(self, training_sample_size=15000, training_max_size=None,
                             training_sampler=None, custom_metrics=None, custom_stopping_func=None,
@@ -421,11 +425,16 @@ class DynamicMetrics(model_bert_fix.CustomMetrics):
                 return mmetrics[3].result()
         raise Exception("No metrics found!")
 
-default_metrics = DynamicMetrics()
-default_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST)
-default_metrics.add_metric("test_final_dampen", data_bert_restriction.default_dampening_sampler_instance, sample_choice = DynamicMetrics.TEST)
-default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
-default_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
-default_metrics.add_metric("test_dampen", data_bert_restriction.default_dampening_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_DAMPEN)
-default_metrics.add_metric("test_dampen_usual", data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_DAMPEN)
-default_metrics.add_metric("test_square_dampen", data_bert_restriction.default_dampening_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_SQUARE_DAMPEN)
+
+default_metrics = None
+
+def generate_default_metrics(rspack: data_bert_restriction.RestrictionSamplerPack):
+    global default_metrics
+    default_metrics = DynamicMetrics()
+    default_metrics.add_metric("test", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST)
+    default_metrics.add_metric("test_final_dampen", rspack.default_dampening_sampler_instance, sample_choice = DynamicMetrics.TEST)
+    default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
+    default_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
+    default_metrics.add_metric("test_dampen", rspack.default_dampening_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_DAMPEN)
+    default_metrics.add_metric("test_dampen_usual", data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_DAMPEN)
+    default_metrics.add_metric("test_square_dampen", rspack.default_dampening_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_SQUARE_DAMPEN)
