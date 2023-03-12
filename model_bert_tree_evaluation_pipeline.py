@@ -414,8 +414,8 @@ def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restri
     preorder_id_to_topics_restrict_id[right_side <= left_side] = len(topics_restrict)
 
     # at most 1GB VRAM. the full matrix is len(topics_restrict) x len(data_topics), so we need to cut it up into pieces.
-    max_topic_chunk = min(268435456 // len(topics_restrict), 10000)
-    max_contents_chunk = min(268435456 // len(topics_restrict), 10000)
+    max_topic_chunk = min(268435456 // len(topics_restrict), 15000)
+    max_contents_chunk = min(268435456 // len(topics_restrict), 15000)
 
     print("Chunk sizes: ", max_topic_chunk, " out of ", len(data_topics), "    ", max_contents_chunk, " out of ",
           len(contents_restrict))
@@ -545,8 +545,8 @@ def reconstruct_tree_structure_with_acceptances_on_restriction(topics_restrict, 
     del left_side, right_side
 
     # at most 1GB VRAM. the full matrix is len(topics_restrict) x len(data_topics), so we need to cut it up into pieces.
-    max_topic_chunk = min(268435456 // len(topics_restrict), 10000)
-    max_contents_chunk = min(268435456 // len(topics_restrict), 10000)
+    max_topic_chunk = min(268435456 // len(topics_restrict), 15000)
+    max_contents_chunk = min(268435456 // len(topics_restrict), 15000)
 
     unique_mintree_ids = np.unique(topic_id_to_mintree_topic_id)
     print("Chunk sizes: ", max_topic_chunk, " out of ", len(unique_mintree_ids), "    ", max_contents_chunk, " out of ",
@@ -568,7 +568,7 @@ def reconstruct_tree_structure_with_acceptances_on_restriction(topics_restrict, 
             topic_num_id = unique_mintree_ids[topic_num_mintree_id]
             subtree_places = preorder_id_to_topics_restrict_id[topic_id_to_subtree_start[topic_num_id]:topic_id_to_subtree_end[topic_num_id]]
             subtree_places = subtree_places[subtree_places != len(topics_restrict)]
-            buffer[subtree_places, topic_num_id - topic_low] = 1.0
+            buffer[subtree_places, topic_num_mintree_id - topic_low] = 1.0
 
         # loop through all the contents, find the content they contain
         completed = 0
