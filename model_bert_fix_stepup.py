@@ -77,6 +77,8 @@ class Model(tf.keras.Model):
     # the first column is for the full model prediction array, the second column for the intermediate
     # prediction
     def call(self, data, training=False, actual_y=None, final_tree_level = None):
+        if self.train_mpnet_mode:
+            return self.call_mpnet_training(data, training=training)
         if type(data) == dict:
             contents_description = data["contents"]["description"]
             contents_title = data["contents"]["title"]
