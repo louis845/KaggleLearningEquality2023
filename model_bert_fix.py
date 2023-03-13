@@ -239,6 +239,123 @@ class TrainingSampler:
     def __del__(self):
         del self.contents_title, self.contents_description, self.contents_one_hot, self.topics_title, self.topics_description, self.topics_one_hot
         gc.collect()
+
+class TrainingSamplerMpnet(TrainingSampler):
+    # loads the data as tf tensors from the folders specified. note that the embedded_vectors_folder require "/" at the end.
+    # for memory constrained GPU devices, we load the files into np arrays instead. in this case, it is not possible to
+    # perform setwise operations.
+    def __init__(self, embedded_vectors_folder, contents_one_hot_file, topics_one_hot_file, device = "gpu"):
+        self.device = device
+        if device == "gpu":
+            self.contents= tf.constant(np.load(embedded_vectors_folder + "contents.npy"), dtype = tf.float32)
+            self.topics = tf.constant(np.load(embedded_vectors_folder + "topics.npy"), dtype = tf.float32)
+
+            self.contents_one_hot = tf.constant(np.load(contents_one_hot_file), dtype = tf.float32)
+            self.topics_one_hot = tf.constant(np.load(topics_one_hot_file), dtype = tf.float32)
+        else:
+            self.contents = np.load(embedded_vectors_folder + "contents.npy", dtype=np.float32)
+            self.topics = np.load(embedded_vectors_folder + "topics.npy", dtype=np.float32)
+
+            self.contents_one_hot = np.load(contents_one_hot_file)
+            self.topics_one_hot = np.load(topics_one_hot_file)
+
+    def obtain_total_num_topics(self):
+        return self.topics_one_hot.shape[0]
+
+    def obtain_total_num_contents(self):
+        return self.contents_one_hot.shape[0]
+
+    # topics_id and contents_id are the indices for topics and contents. each entry in the batch is (topics_id[k], contents_id[k]).
+    # the indices are in integer form (corresponding to data_bert.train_contents_num_id etc).
+    def obtain_input_data(self, topics_id, contents_id):
+        if self.device == "gpu":
+            input_data = {
+                "contents": {
+                    "vectors": tf.gather(self.contents, np.expand_dims(contents_id, axis = 1), axis=0),
+                    "lang": tf.gather(self.contents_one_hot, np.expand_dims(contents_id, axis = 1), axis=0)
+                },
+                "topics": {
+                    "vectors": tf.gather(self.topics, np.expand_dims(topics_id, axis = 1), axis=0),
+                    "lang": tf.gather(self.topics_one_hot, np.expand_dims(topics_id, axis = 1), axis=0)
+                }
+            }
+        else:
+            input_data = {
+                "contents": {
+                    "vectors": tf.constant(np.take(self.contents, np.expand_dims(contents_id, axis=1), axis=0), dtype = tf.float32),
+                    "lang": tf.constant(np.take(self.contents_one_hot, np.expand_dims(contents_id, axis=1), axis=0), dtype = tf.float32)
+                },
+                "topics": {
+                    "vectors": tf.constant(np.take(self.topics, np.expand_dims(topics_id, axis=1), axis=0), dtype = tf.float32),
+                    "lang": tf.constant(np.take(self.topics_one_hot, np.expand_dims(topics_id, axis=1), axis=0), dtype = tf.float32)
+                }
+            }
+        return input_data
+
+    # same thing, except that the lang one-hot columns are all zeros.
+    def obtain_input_data_filter_lang(self, topics_id, contents_id):
+        if self.device == "gpu":
+            input_data = {
+                "contents": {
+                    "vectors": tf.gather(self.contents, np.expand_dims(contents_id, axis = 1), axis=0),
+                    "lang": tf.constant(np.zeros(shape = (len(contents_id), 1, self.contents_one_hot.shape[1])), dtype = tf.float32)
+                },
+                "topics": {
+                    "vectors": tf.gather(self.topics, np.expand_dims(topics_id, axis = 1), axis=0),
+                    "lang": tf.constant(np.zeros(shape = (len(topics_id), 1, self.contents_one_hot.shape[1])), dtype = tf.float32)
+                }
+            }
+        else:
+            input_data = {
+                "contents": {
+                    "vectors": tf.constant(np.take(self.contents, np.expand_dims(contents_id, axis=1), axis=0), dtype = tf.float32),
+                    "lang": tf.constant(np.zeros(shape=(len(contents_id), 1, self.contents_one_hot.shape[1])), dtype = tf.float32)
+                },
+                "topics": {
+                    "vectors": tf.constant(np.take(self.topics, np.expand_dims(topics_id, axis=1), axis=0), dtype = tf.float32),
+                    "lang": tf.constant(np.zeros(shape=(len(topics_id), 1, self.contents_one_hot.shape[1])), dtype = tf.float32)
+                }
+            }
+        return input_data
+
+    # obtain the version where both input data with lang and input data without lang exist.
+    def obtain_input_data_both(self, topics_id, contents_id):
+        with_lang = self.obtain_input_data(topics_id, contents_id)
+        no_lang = self.obtain_input_data_filter_lang(topics_id, contents_id)
+
+        input_data = {
+            "contents": {
+                "vectors": tf.concat([with_lang["contents"]["vectors"], no_lang["contents"]["vectors"]], axis = 0),
+                "lang": tf.concat([with_lang["contents"]["lang"], no_lang["contents"]["lang"]], axis = 0)
+            },
+            "topics": {
+                "vectors": tf.concat([with_lang["topics"]["vectors"], no_lang["topics"]["vectors"]], axis = 0),
+                "lang": tf.concat([with_lang["topics"]["lang"], no_lang["topics"]["lang"]], axis = 0)
+            }
+        }
+
+        del with_lang, no_lang
+        return input_data
+
+    # expected: 3 1D arrays of the same length. each tuple (topics_id_klevel[j], contents_id[j], tree_levels[j])
+    # represents a topic subtree, and the content id. the content id is obviously contents_id[j]. The topic subtree
+    # is given by data_bert_tree_struct.topics_group_filtered[tree_levels[j]]["group_filter_available"][topics_id_klevel[j]].
+    # The topic_num_id of the root node of the subtree is
+    # data_bert_tree_struct.topics_group_filtered[tree_levels[j]]["group_ids"][topics_id_klevel[j]]
+    def obtain_input_data_tree(self, topics_id_klevel, contents_id, tree_levels, final_level):
+        raise("Not supported!")
+
+    # same thing, except that the lang one-hot columns are all zeros.
+    def obtain_input_data_tree_filter_lang(self, topics_id_klevel, contents_id, tree_levels, final_level):
+        raise("Not supported!")
+
+    def obtain_input_data_tree_both(self, topics_id_klevel, contents_id, tree_levels, final_level):
+        raise("Not supported!")
+
+    def __del__(self):
+        del self.contents, self.contents_one_hot, self.topics, self.topics_one_hot
+        gc.collect()
+
 class Model(tf.keras.Model):
     # only the argument units_size define the shape of the model. the argument training_sampler is used for training only.
     def __init__(self, units_size = 512, init_noise = 0.05):

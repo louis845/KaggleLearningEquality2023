@@ -70,6 +70,8 @@ class Model(tf.keras.Model):
         self.train_sample_generation = data_bert.obtain_train_sample
         self.train_sample_square_generation = data_bert.obtain_train_sample
 
+        self.train_mpnet_mode = False
+
     # for training, we feed in actual_y to overdetermine the predictions. if actual_y is not fed in,
     # usual gradient descent will be used. actual_y should be a (batch_size x 2) numpy array, where
     # the first column is for the full model prediction array, the second column for the intermediate
@@ -186,6 +188,54 @@ class Model(tf.keras.Model):
             return tf.math.add(proba * tf_not_final_tree_level, proba_simple * tf_final_tree_level)
         else:  # here we just return the probabilities normally. the probability will be computed as the max inside the set
             return tf.concat([tf.reduce_max(t, axis=1), tf.reduce_max(overshoot_result, axis=1)], axis = 1)
+
+    def call_mpnet_training(self, data, training=False):
+        contents_vectors = data["contents"]["vectors"]
+        contents_lang = data["contents"]["lang"]
+        topics_vectors = data["topics"]["vectors"]
+        topics_lang = data["topics"]["lang"]
+        # combine the (batch_size x set_size x (bert_embedding_size / num_langs)) tensors into (batch_size x set_size x (bert_embedding_size*2+num_langs+bert_embedding_size*2+num_langs))
+
+        contents_text_info = contents_vectors
+        topics_text_info = topics_vectors
+
+        first_layer1_contents = self.dropout0_contents(contents_text_info, training=training)
+        first_layer1_topics = self.dropout0_topics(topics_text_info, training=training)
+        first_layer1_contents_lang = self.dropout0_lang(contents_lang, training=training)
+        first_layer1_topics_lang = self.dropout0_lang(topics_lang, training=training)
+
+        first_layer2_contents = self.dropout0_feed_contents(contents_text_info, training=training)
+        first_layer2_topics = self.dropout0_feed_topics(topics_text_info, training=training)
+        first_layer2_contents_lang = self.dropout0_feed_lang(contents_lang, training=training)
+        first_layer2_topics_lang = self.dropout0_feed_lang(topics_lang, training=training)
+
+        first_layer1 = tf.concat(
+            [first_layer1_contents, first_layer1_contents_lang, first_layer1_topics, first_layer1_topics_lang],
+            axis=-1)
+        first_layer2 = tf.concat(
+            [first_layer2_contents, first_layer2_contents_lang, first_layer2_topics, first_layer2_topics_lang],
+            axis=-1)
+
+        t = self.dropout1(self.dense1(first_layer1), training=training)
+        t = self.dropout2(self.dense2(t), training=training)
+        t = self.dropout3(self.dense3(t), training=training)
+        res_dropout4 = self.dropout4(self.dense4(t), training=training)
+
+        overshoot_fullresult = self.dropoutOvershoot(self.denseOvershoot(res_dropout4), training=training)
+        overshoot_result = self.finalOvershoot(overshoot_fullresult)
+
+        t = self.dropout1_fp(self.dense1_fp(tf.concat([
+            first_layer2,
+            overshoot_fullresult
+        ], axis=-1)), training=training)
+        t = self.dropout2_fp(self.dense2_fp(t), training=training)
+        t = self.dropout3_fp(self.dense3_fp(t), training=training)
+        t = self.dropout4_fp(self.dense4_fp(t), training=training)
+        t = self.dropout5_fp(self.dense5_fp(t), training=training)
+        t = self.final(t)
+
+        return tf.concat([tf.reduce_max(t, axis=1), tf.reduce_max(overshoot_result, axis=1)], axis=1)
+
     def compile(self, weight_decay = 0.01, learning_rate = 0.0005):
         super(Model, self).compile(run_eagerly=True)
         # loss and optimizer
@@ -207,7 +257,7 @@ class Model(tf.keras.Model):
     #             "test_square_sample": data_bert.obtain_test_square_sample}
     def set_training_params(self, training_sample_size=15000, training_max_size=None,
                             training_sampler=None, custom_metrics=None, custom_stopping_func=None,
-                            custom_tuple_choice_sampler=None, custom_tuple_choice_sampler_overshoot=None):
+                            custom_tuple_choice_sampler=None, custom_tuple_choice_sampler_overshoot=None, train_mpnetmode = False):
         self.training_sample_size = training_sample_size
         self.training_max_size = training_max_size
         if training_sampler is not None:
@@ -221,8 +271,10 @@ class Model(tf.keras.Model):
             self.tuple_choice_sampler = custom_tuple_choice_sampler
         if custom_tuple_choice_sampler_overshoot is not None:
             self.tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot
+        self.train_mpnet_mode = train_mpnetmode
 
     def train_step_tree(self):
+        assert not self.train_mpnet_mode
         for k in range(50):
             # two pass, we first compute on overshoot only, and then compute on the full thing
             ratio1 = 2000.0 / 4000
@@ -314,6 +366,14 @@ class Model(tf.keras.Model):
         return {**{m.name: m.result() for m in self.metrics},
                 "entropy_large_set": self.entropy_large_set.result(), **self.custom_metrics.obtain_metrics()}
 
+    @tf.function
+    def call_mpnet_optimstep(self, input_data, y, length0, length1):
+        with tf.GradientTape() as tape:
+            y_pred = self(input_data, training=True)
+            loss = self.loss(y, tf.concat([y_pred[:length0, 0], y_pred[length0:length1, 1],
+                                           y_pred[length1:(length1 + length0), 0],
+                                           y_pred[(length1 + length0):(2 * length1), 1]], axis=0))
+
     def train_step(self, data):
         if self.tuple_choice_sampler.is_tree_sampler():
             return self.train_step_tree()
@@ -338,10 +398,13 @@ class Model(tf.keras.Model):
 
             y = tf.constant(y0)
 
-            with tf.GradientTape() as tape:
-                y_pred = self(input_data, training=True)
-                loss = self.loss(y, tf.concat([y_pred[:len(y0_1), 0], y_pred[len(y0_1):len(y0), 1],
-                            y_pred[len(y0):(len(y0)+len(y0_1)), 0], y_pred[(len(y0)+len(y0_1)):(2*len(y0)), 1]], axis = 0))
+            if self.train_mpnet_mode:
+                self.call_mpnet_optimstep(input_data, y, len(y0_1), len(y0))
+            else:
+                with tf.GradientTape() as tape:
+                    y_pred = self(input_data, training=True)
+                    loss = self.loss(y, tf.concat([y_pred[:len(y0_1), 0], y_pred[len(y0_1):len(y0), 1],
+                                y_pred[len(y0):(len(y0)+len(y0_1)), 0], y_pred[(len(y0)+len(y0_1)):(2*len(y0)), 1]], axis = 0))
             trainable_vars = self.trainable_weights
             gradients = tape.gradient(loss, trainable_vars)
             self.optimizer.apply_gradients(zip(gradients, trainable_vars))
