@@ -276,7 +276,10 @@ class Model(tf.keras.Model):
         self.train_mpnet_mode = train_mpnetmode
 
         if train_mpnetmode:
-            res = self(tf.zeros(shape=(1, 1, 1556), dtype=tf.float32))
+            res = self({
+                "contents":{"vectors": tf.zeros(shape=(1,1,768), dtype=tf.float32), "lang": tf.zeros(shape=(1,1,10), dtype=tf.float32)},
+                "topics": {"vectors": tf.zeros(shape=(1, 1, 768), dtype=tf.float32), "lang": tf.zeros(shape=(1, 1, 10), dtype=tf.float32)}
+            })
             del res
 
     def train_step_tree(self):
