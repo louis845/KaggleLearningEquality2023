@@ -369,7 +369,7 @@ class Model(tf.keras.Model):
     @tf.function
     def call_mpnet_optimstep(self, input_data, y, length0, length1):
         with tf.GradientTape() as tape:
-            y_pred = self(input_data, training=True)
+            y_pred = self.call_mpnet_training(input_data, training=True)
             loss = self.loss(y, tf.concat([y_pred[:length0, 0], y_pred[length0:length1, 1],
                                            y_pred[length1:(length1 + length0), 0],
                                            y_pred[(length1 + length0):(2 * length1), 1]], axis=0))
