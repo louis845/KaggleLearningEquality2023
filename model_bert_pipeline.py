@@ -207,7 +207,7 @@ def train_model_stepup_mpnet(model_name, custom_metrics = None, custom_stopping_
     if custom_stopping_func is None:
         custom_stopping_func = model_bert_fix_stepup.DefaultStoppingFunc(modeldir)
     model.set_training_params(9000, training_sampler = training_sampler, training_max_size = 9000, custom_metrics = custom_metrics, custom_stopping_func = custom_stopping_func,
-                              custom_tuple_choice_sampler = custom_tuple_choice_sampler, custom_tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot, model_folder = modeldir, train_mpnetmode=True)
+                              custom_tuple_choice_sampler = custom_tuple_choice_sampler, custom_tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot, train_mpnetmode=True)
 
     if not os.path.isdir(modeldir + "/"):
         os.mkdir(modeldir + "/")

@@ -273,6 +273,10 @@ class Model(tf.keras.Model):
             self.tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot
         self.train_mpnet_mode = train_mpnetmode
 
+        if train_mpnetmode:
+            res = self(tf.zeros(shape=(1, 1, 1556), dtype=tf.float32))
+            del res
+
     def train_step_tree(self):
         assert not self.train_mpnet_mode
         for k in range(50):
@@ -373,6 +377,9 @@ class Model(tf.keras.Model):
             loss = self.loss(y, tf.concat([y_pred[:length0, 0], y_pred[length0:length1, 1],
                                            y_pred[length1:(length1 + length0), 0],
                                            y_pred[(length1 + length0):(2 * length1), 1]], axis=0))
+        trainable_vars = self.trainable_weights
+        gradients = tape.gradient(loss, trainable_vars)
+        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 
     def train_step(self, data):
         if self.tuple_choice_sampler.is_tree_sampler():
@@ -405,9 +412,9 @@ class Model(tf.keras.Model):
                     y_pred = self(input_data, training=True)
                     loss = self.loss(y, tf.concat([y_pred[:len(y0_1), 0], y_pred[len(y0_1):len(y0), 1],
                                 y_pred[len(y0):(len(y0)+len(y0_1)), 0], y_pred[(len(y0)+len(y0_1)):(2*len(y0)), 1]], axis = 0))
-            trainable_vars = self.trainable_weights
-            gradients = tape.gradient(loss, trainable_vars)
-            self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+                trainable_vars = self.trainable_weights
+                gradients = tape.gradient(loss, trainable_vars)
+                self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 
         if self.training_max_size is None:
             limit = 9223372036854775807
