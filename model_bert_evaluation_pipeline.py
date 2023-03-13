@@ -804,7 +804,7 @@ def obtain_multiple_topk_from_probas_folder(topics_restrict, out_probs_folder, t
             print("Completed topic " + str(k) + " out of " + str(len(topics_restrict)) + " for topk prediction")
     return predictions
 
-def save_topk_to_files(out_probs_folder, total_probas_write, topics_pred_id, contents_pred_id, probabilities_np, topk):
+def save_topk_to_files(out_probs_folder, total_probas_write, topics_pred_id, contents_pred_id, probabilities_np, topk, threshold):
     # note that the topics_pred_id are sorted.
     topics_unique_ids = np.unique(topics_pred_id)
     left = np.searchsorted(topics_pred_id, topics_unique_ids, side="left")
@@ -823,6 +823,10 @@ def save_topk_to_files(out_probs_folder, total_probas_write, topics_pred_id, con
             topk_idx = np.argpartition(sprobas, -topk)[-topk:]
             scontents = scontents[topk_idx]
             sprobas = sprobas[topk_idx]
+
+        if threshold > 0:
+            scontents = scontents[sprobas > threshold]
+            sprobas = sprobas[sprobas > threshold]
 
         end = start + len(scontents)
         topics_buf[start:end] = topics_unique_ids[k]
@@ -843,7 +847,7 @@ def obtain_topic_based_topk_probas_stepup_dimreduce3(proba_callback, topics_rest
                                                 full_topics_d1os, full_contents_d1os,
                                                 full_topics_d1dp, full_contents_d1dp,
                                                 full_topics_d1fp, full_contents_d1fp, topic_id_to_mintree_topic_id,
-                                                topk=300, batch_size=70000, chunk_size=8388608):
+                                                topk=300, threshold=-0.0001, batch_size=70000, chunk_size=8388608):
     assert os.path.exists(topics_folder)
     topics_restrict = np.unique(topics_restrict)
     contents_restrict = np.unique(contents_restrict)
@@ -889,7 +893,7 @@ def obtain_topic_based_topk_probas_stepup_dimreduce3(proba_callback, topics_rest
                 probabilities = None
             if probabilities is not None:
                 probabilities_np = probabilities.numpy()
-                save_topk_to_files(out_probs_folder, total_probas_write, topics_pred_id, contents_pred_id, probabilities_np, topk=topk)
+                save_topk_to_files(out_probs_folder, total_probas_write, topics_pred_id, contents_pred_id, probabilities_np, topk=topk, threshold=threshold)
                 del probabilities, probabilities_np
                 total_probas_write += 1
 
@@ -939,7 +943,7 @@ def obtain_topic_based_topk_probas_stepup_dimreduce3(proba_callback, topics_rest
             probabilities_np = probabilities.numpy()
             del probabilities
 
-            save_topk_to_files(out_probs_folder, total_probas_write, topics_pred_id, contents_pred_id, probabilities_np, topk=topk)
+            save_topk_to_files(out_probs_folder, total_probas_write, topics_pred_id, contents_pred_id, probabilities_np, topk=topk, threshold=threshold)
             del probabilities_np, topics_pred_id, contents_pred_id
             total_probas_write += 1
             tlow = thigh

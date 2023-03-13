@@ -103,13 +103,12 @@ def evaluate_topk_from_performance_format2(topk_preds, topics_restrict, contents
 
         for k in topk_preds.keys():
             topk_pred = topk_preds[k]
-            row_preds = set(list(topk_pred[topics_restrict_id]))
+            row_preds = np.unique(topk_pred[topics_restrict_id])
 
             row_tp, row_tn, row_fp, row_fn = 0,0,0,0
             if data_bert.topics.loc[topic_str_id, "has_content"]:
-                actual_cors = np.array(list(data_bert.contents_inv_map.loc[data_bert.correlations.loc[topic_str_id, "content_ids"].split()]))
-                actual_cors = set(actual_cors[data_bert.fast_contains_multi(contents_restrict, actual_cors)])
-                row_tp = len(row_preds.intersection(actual_cors))
+                actual_cors = np.unique(np.array(list(data_bert.contents_inv_map.loc[data_bert.correlations.loc[topic_str_id, "content_ids"].split()])))
+                row_tp = data_bert.fast_contains_multi(row_preds, actual_cors).sum()
                 row_fn = len(actual_cors) - row_tp
                 row_fp = len(row_preds) - row_tp
                 row_tn = len(contents_restrict) - row_tp - row_fn - row_fp
@@ -134,6 +133,11 @@ def evaluate_topk_from_performance_format2(topk_preds, topics_restrict, contents
             else:
                 row_f2 = 5.0 * row_precision * row_recall / (4.0 * row_precision + row_recall)
             row_accuracy = (row_tp + row_tn + 0.0) / len(contents_restrict)
+
+            if row_recall < row_precision:
+                assert row_recall <= row_f2 and row_f2 <= row_precision
+            elif row_precision < row_recall:
+                assert row_precision <= row_f2 and row_f2 <= row_recall
 
             true_positive[k] += row_tp
             true_negative[k] += row_tn
