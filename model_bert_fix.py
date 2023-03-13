@@ -253,8 +253,8 @@ class TrainingSamplerMpnet(TrainingSampler):
             self.contents_one_hot = tf.constant(np.load(contents_one_hot_file), dtype = tf.float32)
             self.topics_one_hot = tf.constant(np.load(topics_one_hot_file), dtype = tf.float32)
         else:
-            self.contents = np.load(embedded_vectors_folder + "contents.npy", dtype=np.float32)
-            self.topics = np.load(embedded_vectors_folder + "topics.npy", dtype=np.float32)
+            self.contents = np.load(embedded_vectors_folder + "contents.npy").astype(np.float32)
+            self.topics = np.load(embedded_vectors_folder + "topics.npy").astype(np.float32)
 
             self.contents_one_hot = np.load(contents_one_hot_file)
             self.topics_one_hot = np.load(topics_one_hot_file)

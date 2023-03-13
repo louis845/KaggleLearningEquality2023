@@ -277,14 +277,16 @@ tuple_choice_sampler = data_bert_sampler.MixedSampler(sampler_list = [data_bert_
 metrics = model_bert_fix.obtain_overshoot_metric_instance(tuple_choice_sampler)
 train_model("overshoot23", custom_metrics = metrics, custom_tuple_choice_sampler =  tuple_choice_sampler)"""
 
-print("RESTRICTION DATA:")
+"""print("RESTRICTION DATA:")
 print("Using train data: " + sys.argv[1])
 print("Using test data: " + sys.argv[2])
 data_bert_restriction.generate_info_from_folder(config.resources_path + "model_eval_tree/" + sys.argv[1] + "/",
         config.resources_path + "model_eval_tree/" + sys.argv[2] + "/")
 
 train_model_3stepup(sys.argv[3], init_noise_dampen_topics=0.2, init_noise_dampen_contents=0.2,
-                    init_noise_topics=0.04, init_noise_contents=0.04, weight_decay = 0.00002)
+                    init_noise_topics=0.04, init_noise_contents=0.04, weight_decay = 0.00002) """
+
+train_model_stepup_mpnet("stepup_precise_mpnet")
 
 """tuple_choice_sampler = data_bert_sampler.default_sampler_instance
 tuple_choice_sampler_overshoot = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance])
