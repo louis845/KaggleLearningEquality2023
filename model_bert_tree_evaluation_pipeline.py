@@ -658,100 +658,70 @@ def reconstruct_tree_structure_with_acceptances_on_restriction(topics_restrict, 
     return topic_id_to_mintree_topic_id
 
 
-"""def reconstruct_topic_containings_with_acceptances(topics_restrict, contents_restrict, data_topics, saved_lengths, acceptances_folder = "contents_acceptances/",
-                                                out_containings_folder = "containings/"):
+def reconstruct_topic_containings_with_acceptances(topics_restrict, contents_restrict, data_topics, saved_lengths,
+                                    acceptances_folder = "contents_acceptances/", out_containings_folder = "containings/"):
     assert (topics_restrict[1:] <= topics_restrict[:-1]).sum() == 0
     assert (contents_restrict[1:] <= contents_restrict[:-1]).sum() == 0
     if not os.path.exists(out_containings_folder):
         os.mkdir(out_containings_folder)
 
-    # at most 1GB VRAM. the full matrix is len(topics_restrict) x len(data_topics), so we need to cut it up into pieces.
-    max_topic_chunk = min(268435456 // len(topics_restrict), 15000)
-    max_contents_chunk = min(268435456 // len(topics_restrict), 15000)
-
-    print("Chunk sizes: ", max_topic_chunk, " out of ", len(data_topics), "    ", max_contents_chunk, " out of ",
-          len(contents_restrict))
-
-    # we compute the tree structure correlations here
-    topic_low = 0
     saved_partitions = np.zeros(shape=(len(data_topics)), dtype=np.int32)
 
-    for k in range(len())
+    contents_restrict_start = 0
 
-    while topic_low < len(data_topics):
-        print("Running ", topic_low)
-        ctime = time.time()
+    ttopic_num_ids = np.array([], dtype=np.int32)
+    tcontent_num_ids = np.array([], dtype=np.int32)
 
-        topic_high = min(topic_low + max_topic_chunk, len(data_topics))
-        buffer = np.zeros(shape=(len(topics_restrict), topic_high - topic_low), dtype=np.float32)
+    ctime = time.time()
+    for k in range(len(saved_lengths)):
+        locs = np.load(acceptances_folder + str(k) + ".npy")
+        if len(locs) > 0:
+            # the axis for contents_restrict
+            axis1 = (locs // len(topics_restrict)) + contents_restrict_start
+            # the axis for topics_restrict
+            axis2 = locs % len(topics_restrict)
+            del locs
 
+            topic_num_ids = topics_restrict[axis2]
+            content_num_ids = contents_restrict[axis1]
+            del axis1, axis2
 
+            ttopic_num_ids2, tcontent_num_ids2 = ttopic_num_ids, tcontent_num_ids
+            ttopic_num_ids = np.concatenate([ttopic_num_ids2, topic_num_ids])
+            tcontent_num_ids = np.concatenate([tcontent_num_ids2, content_num_ids])
+            del topic_num_ids, content_num_ids, ttopic_num_ids2, tcontent_num_ids2
 
-        # loop through all the contents, find the content they contain
-        completed = 0
-        completed_contents_restrict = 0
-        while completed < len(saved_lengths):
-            contents_csize = saved_lengths[completed]
-            content_load_end = completed + 1
-            while (content_load_end < len(saved_lengths)) and (contents_csize + saved_lengths[content_load_end] < max_contents_chunk):
-                contents_csize += saved_lengths[content_load_end]
-                content_load_end += 1
+        if (k % 50 == 49) or k == len(saved_lengths)-1:
+            sortid = np.argsort(ttopic_num_ids)
+            topic_num_ids = ttopic_num_ids[sortid]
+            content_num_ids = tcontent_num_ids[sortid]
+            del sortid, ttopic_num_ids, tcontent_num_ids
+            ttopic_num_ids = np.array([], dtype=np.int32)
+            tcontent_num_ids = np.array([], dtype=np.int32)
 
-            cont_buffer = np.zeros(shape=(contents_csize, len(topics_restrict)), dtype=np.int32)
-            contents_csize = 0
-            for content_load in range(completed, content_load_end):
-                # cont_buffer[contents_csize:contents_csize+saved_lengths[content_load], :] = np.load(acceptances_folder + str(content_load) + ".npy")
-                locs = np.load(acceptances_folder + str(content_load) + ".npy")
-                if len(locs) > 0:
-                    axis1 = locs // len(topics_restrict)
-                    axis2 = locs % len(topics_restrict)
+            unqtopics = np.unique(topic_num_ids)
+            left = np.searchsorted(topic_num_ids, unqtopics, side="left")
+            right = np.searchsorted(topic_num_ids, unqtopics, side="right")
+            for i in range(len(unqtopics)):
+                topic_contents = content_num_ids[left[i]:right[i]]
+                topic_num_id = unqtopics[i]
 
-                    axis2
-                    cont_buffer[contents_csize + axis1, axis2] = 1.0
-                    del locs, axis1, axis2
-                else:
-                    del locs
-                contents_csize += saved_lengths[content_load]
-
-            result_tf = matmul_where(tf.constant(cont_buffer), tf.constant(buffer))
-            result = result_tf.numpy()
-            del result_tf, cont_buffer
-
-            has_cor_topics = result[:, 0]
-            has_cor_contents = result[:, 1]
-            del result
-
-            topic_mats = np.unique(has_cor_topics)
-            left = np.searchsorted(has_cor_topics, topic_mats, side="left")
-            right = np.searchsorted(has_cor_topics, topic_mats, side="right")
-
-            for k in range(len(topic_mats)):
-                topic_mat = topic_mats[k]
-
-                topic_num_id = topic_mat + topic_low
-                topic_nid_folder = out_topics_folder + "topic" + str(topic_num_id) + "/"
+                topic_nid_folder = out_containings_folder + "topic" + str(topic_num_id) + "/"
                 curp = saved_partitions[topic_num_id]
                 if curp == 0:
                     os.mkdir(topic_nid_folder)
                 saved_partitions[topic_num_id] = curp + 1
-                np.save(topic_nid_folder + str(curp) + ".npy", contents_restrict[has_cor_contents[left[k]:right[k]] + completed_contents_restrict])
+                np.save(topic_nid_folder + str(curp) + ".npy", topic_contents)
+                del topic_contents
+            del left, right, unqtopics, topic_num_ids, content_num_ids
 
-
-            del has_cor_contents, has_cor_topics, left, right, topic_mats
-            # end of searching from [completed, content_load_end)
-            completed = content_load_end
-            completed_contents_restrict += contents_csize
             gc.collect()
 
-        # done, we move on.
-        ctime = time.time() - ctime
-        del buffer
+            ctime = time.time() - ctime
+            print("Completed ", k, " out of ", len(saved_lengths), "    Time taken: ", ctime)
+            ctime = time.time()
+        contents_restrict_start += saved_lengths[k]
 
-        print("Completed topic chunk iteration", topic_low, "-", topic_high, "    Time used: ", ctime)
-        topic_low = topic_high
-
-
-    del topics_inv_map, topic_id_to_subtree_start, topic_id_to_subtree_end, preorder_id_to_topic_id, preorder_id_to_topics_restrict_id
     try:
         shutil.rmtree(acceptances_folder)
     except OSError:
@@ -759,9 +729,9 @@ def reconstruct_tree_structure_with_acceptances_on_restriction(topics_restrict, 
 
     ctime = time.time()
     for topic_num_id in range(len(data_topics)):
-        topic_nid_folder = out_topics_folder + "topic" + str(topic_num_id) + "/"
+        topic_nid_folder = out_containings_folder + "topic" + str(topic_num_id) + "/"
         if saved_partitions[topic_num_id] > 0:
-            np.save(out_topics_folder + str(topic_num_id) + ".npy",
+            np.save(out_containings_folder + str(topic_num_id) + ".npy",
                     np.sort(np.concatenate(
                         [np.load(topic_nid_folder + str(k) + ".npy") for k in range(saved_partitions[topic_num_id])],
                         axis=0))
@@ -770,7 +740,7 @@ def reconstruct_tree_structure_with_acceptances_on_restriction(topics_restrict, 
         if topic_num_id % 1000 == 0:
             ctime = time.time() - ctime
             print("Combined: ", topic_num_id, " out of ", len(data_topics), " Time:", ctime)
-            ctime = time.time()"""
+            ctime = time.time()
 
 # in this case device must be GPU. for each content in contents_restrict, we compute the possible topics the contents
 # belong to.

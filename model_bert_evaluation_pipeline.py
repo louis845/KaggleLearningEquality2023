@@ -203,6 +203,7 @@ def obtain_rowwise_topk_from_dot_prod(topics_restrict, contents_restrict, full_t
     length = len(topics_restrict)
 
     topk_preds = np.zeros(shape=(len(topics_restrict), topk), dtype=np.int32)
+    dotsim_preds = np.zeros(shape=(len(topics_restrict), topk), dtype=np.float32)
 
     batch_size = greedy_multiple_rows
     tlow = 0
@@ -222,6 +223,9 @@ def obtain_rowwise_topk_from_dot_prod(topics_restrict, contents_restrict, full_t
 
             sorted_locs = get_topk(dotsim_np, topk)
             topk_preds[np.arange(tlow, thigh), :] = contents_restrict[sorted_locs]
+            dotsim_preds[np.arange(tlow, thigh), :] = dotsim_np[
+                np.repeat(np.expand_dims(np.arange(thigh-tlow), axis=1), repeats=thigh-tlow, axis=1),
+                sorted_locs]
             del dotsim_np
             # if success we update
             tlow = thigh
@@ -241,13 +245,63 @@ def obtain_rowwise_topk_from_dot_prod(topics_restrict, contents_restrict, full_t
             continuous_success = 0
         gc.collect()
 
-    return topk_preds
+    return topk_preds, dotsim_preds
 
-def expand_topks_from_singlek(topk_preds, topk_values):
+def expand_topks_from_singlek(topk_preds, dotsim_preds, topk_values):
     topk_preds_dict = {}
+    dotsim_preds_dict = {}
     for i in range(len(topk_values)):
         topk_preds_dict[topk_values[i]] = topk_preds[:, -topk_values[i]:]
-    return topk_preds_dict
+        dotsim_preds_dict[topk_values[i]] = dotsim_preds[:, -topk_values[i]:]
+    return topk_preds_dict, dotsim_preds_dict
+
+
+def obtain_dot_prod_simscore_from_tuples(topics_tuple, contents_tuple, full_topics_data, full_contents_data,
+                                         batch_size=200000):
+    max_batch_size = np.inf
+    length = len(topics_tuple)
+    assert length == len(contents_tuple)
+    print_length = max(length // 50, 1)
+
+    total_simscore = np.zeros(shape=length, dtype=np.float32)
+    tlow = 0
+    continuous_success = 0
+    prev_tlow = 0
+    ctime = time.time()
+    while tlow < length:
+        thigh = min(tlow + batch_size, length)
+        topic_ids = topics_tuple[np.arange(tlow, thigh)]
+        content_ids = contents_tuple[np.arange(tlow, thigh)]
+        try:
+            simscore = tf.reduce_sum(
+                tf.math.multiply(tf.gather(full_topics_data, topic_ids, axis=0),
+                                 tf.gather(full_contents_data, content_ids, axis=0)),
+            axis=1)
+        except tf.errors.ResourceExhaustedError as err:
+            simscore = None
+        if simscore is not None:
+            total_simscore[tlow:thigh] = simscore.numpy()
+            del simscore
+            # if success we update
+            tlow = thigh
+            continuous_success += 1
+            if continuous_success == 3:
+                continuous_success = 0
+                batch_size = min(batch_size + 6000, max_batch_size)
+
+            if tlow - prev_tlow > print_length:
+                ctime = time.time() - ctime
+                print(tlow, "completed. out of:", length, "  batch size:", batch_size, "  time used:", ctime)
+                prev_tlow = tlow
+                ctime = time.time()
+        else:
+            batch_size = max(batch_size - 1500, 1)
+            max_batch_size = batch_size
+            continuous_success = 0
+        gc.collect()
+
+    assert len(total_simscore) == length
+    return total_simscore
 
 
 @tf.function
