@@ -190,8 +190,8 @@ def evaluate_topk_from_performance_with_dotsim_restrict(topk_preds, dotsim_preds
         for k in topk_preds.keys():
             topk_pred = topk_preds[k]
             row_preds = topk_pred[topics_restrict_id, :]
-            dotsim_preds = dotsim_preds[k][topics_restrict_id, :]
-            row_preds = np.unique(row_preds[dotsim_preds > 0])
+            dotsim_predslc = dotsim_preds[k][topics_restrict_id, :]
+            row_preds = np.unique(row_preds[dotsim_predslc > 0])
 
             row_tp, row_tn, row_fp, row_fn = 0,0,0,0
             if data_bert.topics.loc[topic_str_id, "has_content"]:
