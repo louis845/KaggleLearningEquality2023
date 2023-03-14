@@ -224,7 +224,7 @@ def obtain_rowwise_topk_from_dot_prod(topics_restrict, contents_restrict, full_t
             sorted_locs = get_topk(dotsim_np, topk)
             topk_preds[np.arange(tlow, thigh), :] = contents_restrict[sorted_locs]
             dotsim_preds[np.arange(tlow, thigh), :] = dotsim_np[
-                np.repeat(np.expand_dims(np.arange(thigh-tlow), axis=1), repeats=thigh-tlow, axis=1),
+                np.repeat(np.expand_dims(np.arange(thigh-tlow), axis=1), repeats=topk, axis=1),
                 sorted_locs]
             del dotsim_np
             # if success we update
