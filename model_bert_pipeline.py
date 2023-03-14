@@ -236,6 +236,13 @@ def train_model_3stepup(model_name, custom_metrics = None, custom_stopping_func 
                                         init_noise_overshoot_contents = init_noise_overshoot_contents, init_noise_dampen_contents = init_noise_dampen_contents,
                                         init_noise_lang = init_noise_lang, init_noise_overshoot_lang = init_noise_overshoot_lang,
                                         init_noise_dampen_lang = init_noise_dampen_lang)
+
+    rspack = data_bert_restriction.generate_info_from_folder(
+        combined_train_folder="data/model_eval_tree/topics_tree_overshoot_small_trained_on_train_eval_train_COMBINE/",
+        combined_test_folder="data/model_eval_tree/topics_tree_overshoot_small_trained_on_train_eval_test_COMBINE/")
+    model_bert_fix_3stepup.generate_default_metrics(rspack)
+    model.set_sampling_functions_with_pack(rspack)
+
     modeldir = config.training_models_path + model_name
     checkpoint_file = modeldir + "/{epoch:07d}.ckpt"
     logging_file = modeldir + "/logfile.csv"
@@ -281,12 +288,14 @@ train_model("overshoot23", custom_metrics = metrics, custom_tuple_choice_sampler
 print("Using train data: " + sys.argv[1])
 print("Using test data: " + sys.argv[2])
 data_bert_restriction.generate_info_from_folder(config.resources_path + "model_eval_tree/" + sys.argv[1] + "/",
-        config.resources_path + "model_eval_tree/" + sys.argv[2] + "/")
+        config.resources_path + "model_eval_tree/" + sys.argv[2] + "/")"""
 
-train_model_3stepup(sys.argv[3], init_noise_dampen_topics=0.2, init_noise_dampen_contents=0.2,
-                    init_noise_topics=0.04, init_noise_contents=0.04, weight_decay = 0.00002) """
+"""train_model_stepup("minilm12_eng_model_3stepup_for_precise", init_noise_dampen_topics=0.2, init_noise_dampen_contents=0.2,
+                    init_noise_topics=0.04, init_noise_contents=0.04, weight_decay = 0.00002)"""
 
-train_model_stepup_mpnet("stepup_precise_mpnet")
+train_model_stepup("minilm12_eng_model_stepup_moreprecise", init_noise_topics=0.03, init_noise_contents=0.03)
+
+# train_model_stepup_mpnet("stepup_precise_mpnet")
 
 """tuple_choice_sampler = data_bert_sampler.default_sampler_instance
 tuple_choice_sampler_overshoot = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance])

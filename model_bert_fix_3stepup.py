@@ -236,12 +236,12 @@ class Model(tf.keras.Model):
             ratio3 = 7.0 / 15
 
             topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
-                int(0 * ratio1 * self.training_sample_size) // 8)
+                int(5 * ratio1 * self.training_sample_size) // 8)
             topics_, contents_, cors_, class_ids_ = self.tuple_choice_sampler_dampen.obtain_train_sample(
-                int(8 * ratio1 * self.training_sample_size) // 8)
+                int(3 * ratio1 * self.training_sample_size) // 8)
             topics2, contents2, cors2, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
                 int(ratio2 * self.training_sample_size))
-            topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen_overshoot.obtain_train_sample(
+            topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen.obtain_train_sample(
                 int(ratio3 * self.training_sample_size))
 
             del cors, cors2, cors3, cors_, class_ids, class_ids_, class_ids2, class_ids3
@@ -251,7 +251,7 @@ class Model(tf.keras.Model):
 
             y1 = self.tuple_choice_sampler.has_correlations(contents, topics, None)
             y2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, None)
-            y3 = self.tuple_choice_sampler_dampen_overshoot.has_correlations(contents3, topics3, None)
+            y3 = self.tuple_choice_sampler_dampen.has_correlations(contents3, topics3, None)
 
             y0 = np.tile(np.concatenate([y1, y2, y3]), 2)
             y = tf.constant(y0)
@@ -278,12 +278,12 @@ class Model(tf.keras.Model):
         ratio3 = 7.0 / 15
 
         topics, contents, cors, class_ids = self.tuple_choice_sampler.obtain_train_sample(
-            int(0 * ratio1 * self.training_sample_size) // 8)
+            int(5 * ratio1 * self.training_sample_size) // 8)
         topics_, contents_, cors_, class_ids_ = self.tuple_choice_sampler_dampen.obtain_train_sample(
-            int(8 * ratio1 * self.training_sample_size) // 8)
+            int(3 * ratio1 * self.training_sample_size) // 8)
         topics2, contents2, cors2, class_ids2 = self.tuple_choice_sampler_overshoot.obtain_train_sample(
             int(ratio2 * self.training_sample_size))
-        topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen_overshoot.obtain_train_sample(
+        topics3, contents3, cors3, class_ids3 = self.tuple_choice_sampler_dampen.obtain_train_sample(
             int(ratio3 * self.training_sample_size))
 
         del cors, cors2, cors3, cors_, class_ids, class_ids_, class_ids2, class_ids3
@@ -293,7 +293,7 @@ class Model(tf.keras.Model):
 
         y1 = self.tuple_choice_sampler.has_correlations(contents, topics, None)
         y2 = self.tuple_choice_sampler_overshoot.has_correlations(contents2, topics2, None)
-        y3 = self.tuple_choice_sampler_dampen_overshoot.has_correlations(contents3, topics3, None)
+        y3 = self.tuple_choice_sampler_dampen.has_correlations(contents3, topics3, None)
 
         y0 = np.tile(np.concatenate([y1, y2, y3]), 2)
         y = tf.constant(y0)
@@ -435,6 +435,6 @@ def generate_default_metrics(rspack: data_bert_restriction.RestrictionSamplerPac
     default_metrics.add_metric("test_final_dampen", rspack.default_dampening_sampler_instance, sample_choice = DynamicMetrics.TEST)
     default_metrics.add_metric("test_square", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE)
     default_metrics.add_metric("test_overshoot", data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_OVERSHOOT)
-    default_metrics.add_metric("test_dampen", rspack.default_dampening_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_DAMPEN)
-    default_metrics.add_metric("test_dampen_usual", data_bert_sampler.default_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_DAMPEN)
-    default_metrics.add_metric("test_square_dampen", rspack.default_dampening_sampler_overshoot2_instance, sample_choice = DynamicMetrics.TEST_SQUARE_DAMPEN)
+    default_metrics.add_metric("test_dampen", rspack.default_dampening_sampler_instance, sample_choice = DynamicMetrics.TEST_DAMPEN)
+    default_metrics.add_metric("test_dampen_usual", data_bert_sampler.default_sampler_instance, sample_choice = DynamicMetrics.TEST_DAMPEN)
+    default_metrics.add_metric("test_square_dampen", rspack.default_dampening_sampler_instance, sample_choice = DynamicMetrics.TEST_SQUARE_DAMPEN)

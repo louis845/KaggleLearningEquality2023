@@ -669,8 +669,10 @@ def reconstruct_topic_containings_with_acceptances(topics_restrict, contents_res
 
     contents_restrict_start = 0
 
-    ttopic_num_ids = np.array([], dtype=np.int32)
-    tcontent_num_ids = np.array([], dtype=np.int32)
+    ttopic_num_ids = np.zeros(shape=1073741824, dtype=np.int32)
+    tcontent_num_ids = np.zeros(shape=1073741824, dtype=np.int32)
+    
+    written_low = 0
 
     ctime = time.time()
     for k in range(len(saved_lengths)):
@@ -686,18 +688,19 @@ def reconstruct_topic_containings_with_acceptances(topics_restrict, contents_res
             content_num_ids = contents_restrict[axis1]
             del axis1, axis2
 
-            ttopic_num_ids2, tcontent_num_ids2 = ttopic_num_ids, tcontent_num_ids
-            ttopic_num_ids = np.concatenate([ttopic_num_ids2, topic_num_ids])
-            tcontent_num_ids = np.concatenate([tcontent_num_ids2, content_num_ids])
-            del topic_num_ids, content_num_ids, ttopic_num_ids2, tcontent_num_ids2
+            ttopic_num_ids[written_low:written_low+len(topic_num_ids)] = topic_num_ids
+            tcontent_num_ids[written_low:written_low+len(topic_num_ids)] = content_num_ids
+            written_low = written_low + len(topic_num_ids)
+            del topic_num_ids, content_num_ids
 
-        if (k % 50 == 49) or k == len(saved_lengths)-1:
-            sortid = np.argsort(ttopic_num_ids)
-            topic_num_ids = ttopic_num_ids[sortid]
-            content_num_ids = tcontent_num_ids[sortid]
-            del sortid, ttopic_num_ids, tcontent_num_ids
-            ttopic_num_ids = np.array([], dtype=np.int32)
-            tcontent_num_ids = np.array([], dtype=np.int32)
+        if (k % 500 == 499) or k == len(saved_lengths)-1:
+            topic_num_ids = ttopic_num_ids[:written_low]
+            content_num_ids = tcontent_num_ids[:written_low]
+            sortid = np.argsort(topic_num_ids)
+            topic_num_ids = topic_num_ids[sortid]
+            content_num_ids = content_num_ids[sortid]
+            del sortid
+            written_low = 0
 
             unqtopics = np.unique(topic_num_ids)
             left = np.searchsorted(topic_num_ids, unqtopics, side="left")
@@ -721,7 +724,7 @@ def reconstruct_topic_containings_with_acceptances(topics_restrict, contents_res
             print("Completed ", k, " out of ", len(saved_lengths), "    Time taken: ", ctime)
             ctime = time.time()
         contents_restrict_start += saved_lengths[k]
-
+    del ttopic_num_ids, tcontent_num_ids
     try:
         shutil.rmtree(acceptances_folder)
     except OSError:
