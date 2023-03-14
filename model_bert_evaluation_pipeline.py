@@ -196,6 +196,60 @@ def obtain_rowwise_topk_pgpu(proba_callback, topics_restrict, contents_restrict,
 
     return topk_preds
 
+# algorithm for dot product topk
+def obtain_rowwise_topk_from_dot_prod(topics_restrict, contents_restrict, full_topics_data, full_contents_data, topk = 100,
+                                      greedy_multiple_rows = 5000, max_batch_size = 50000):
+    full_contents_restricted_matrix = tf.gather(full_contents_data, contents_restrict, axis=0)
+    length = len(topics_restrict)
+
+    topk_preds = np.zeros(shape=(len(topics_restrict), topk), dtype=np.int32)
+
+    batch_size = greedy_multiple_rows
+    tlow = 0
+    continuous_success = 0
+    prev_tlow = 0
+    ctime = time.time()
+    while tlow < length:
+        thigh = min(tlow + batch_size, length)
+        topic_id_rows = topics_restrict[np.arange(tlow, thigh)]
+        try:
+            dotsim = tf.linalg.matmul(tf.gather(full_topics_data, topic_id_rows, axis=0), full_contents_restricted_matrix, transpose_b=True)
+        except tf.errors.ResourceExhaustedError as err:
+            dotsim = None
+        if dotsim is not None:
+            dotsim_np = dotsim.numpy()
+            del dotsim
+
+            sorted_locs = get_topk(dotsim_np, topk)
+            topk_preds[np.arange(tlow, thigh), :] = contents_restrict[sorted_locs]
+            del dotsim_np
+            # if success we update
+            tlow = thigh
+            continuous_success += 1
+            if continuous_success == 3:
+                continuous_success = 0
+                batch_size = min(batch_size + 1000, max_batch_size)
+
+            if tlow - prev_tlow > 2000:
+                ctime = time.time() - ctime
+                print(tlow, "completed. out of:", length, "  batch size:", batch_size, "  time used:", ctime)
+                prev_tlow = tlow
+                ctime = time.time()
+        else:
+            batch_size = max(batch_size - 1000, 1)
+            max_batch_size = batch_size
+            continuous_success = 0
+        gc.collect()
+
+    return topk_preds
+
+def expand_topks_from_singlek(topk_preds, topk_values):
+    topk_preds_dict = {}
+    for i in range(len(topk_values)):
+        topk_preds_dict[topk_values[i]] = topk_preds[:, -topk_values[i]:]
+    return topk_preds_dict
+
+
 @tf.function
 def predict_probabilities_direct_gpu(proba_callback, topics_tuple, contents_tuple, full_topics_data, full_contents_data):
     return proba_callback.predict_probabilities_with_data_return_gpu(topics_tuple, contents_tuple, full_topics_data, full_contents_data)
