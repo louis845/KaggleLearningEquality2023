@@ -196,6 +196,12 @@ def obtain_rowwise_topk_pgpu(proba_callback, topics_restrict, contents_restrict,
 
     return topk_preds
 
+def get_topk_gpu(x, k):
+    res = np.argpartition(x, kth = -k, axis = 1)[:, -k:]
+    rep = np.repeat(np.expand_dims(np.arange(res.shape[0]), axis = 1), res.shape[1], axis = 1)
+    res2 = np.argsort(x[rep, res], axis = 1)
+    return res[rep, res2]
+
 # BASICALLY, run from top to bottom
 # algorithm for dot product topk
 def obtain_rowwise_topk_from_dot_prod(topics_restrict, contents_restrict, full_topics_data, full_contents_data, topk = 100,
@@ -233,7 +239,7 @@ def obtain_rowwise_topk_from_dot_prod(topics_restrict, contents_restrict, full_t
             continuous_success += 1
             if continuous_success == 3:
                 continuous_success = 0
-                batch_size = min(batch_size + 2500, max_batch_size)
+                batch_size = min(batch_size + 2000, max_batch_size)
 
             if tlow - prev_tlow > 4000:
                 ctime = time.time() - ctime
@@ -241,7 +247,7 @@ def obtain_rowwise_topk_from_dot_prod(topics_restrict, contents_restrict, full_t
                 prev_tlow = tlow
                 ctime = time.time()
         else:
-            batch_size = max(batch_size - 2500, 1)
+            batch_size = max(batch_size - 2000, 1)
             max_batch_size = batch_size
             continuous_success = 0
         gc.collect()
@@ -250,7 +256,7 @@ def obtain_rowwise_topk_from_dot_prod(topics_restrict, contents_restrict, full_t
 
 # reshape the topk_preds and dotsim_preds into tuple format
 def obtain_tuple_format_from_topk(topics_restrict, topk_preds):
-    return np.repeat(topics_restrict, topk_preds.shape[1]), topk_preds.flatten()
+    return np.repeat(topics_restrict, topk_preds.shape[1]).astype(np.int32), topk_preds.flatten()
 
 def expand_topks_from_singlek(topk_preds, dotsim_preds, topk_values):
     topk_preds_dict = {}
@@ -291,7 +297,7 @@ def obtain_dot_prod_simscore_from_tuples(topics_tuple, contents_tuple, full_topi
             continuous_success += 1
             if continuous_success == 3:
                 continuous_success = 0
-                batch_size = min(batch_size + 6000, max_batch_size)
+                batch_size = min(batch_size + 10000, max_batch_size)
 
             if tlow - prev_tlow > print_length:
                 ctime = time.time() - ctime
@@ -299,7 +305,7 @@ def obtain_dot_prod_simscore_from_tuples(topics_tuple, contents_tuple, full_topi
                 prev_tlow = tlow
                 ctime = time.time()
         else:
-            batch_size = max(batch_size - 1500, 1)
+            batch_size = max(batch_size - 10000, 1)
             max_batch_size = batch_size
             continuous_success = 0
         gc.collect()
@@ -313,7 +319,7 @@ def predict_probabilities_direct_gpu_stepup_dimreduce(proba_callback, topics_tup
     return proba_callback.predict_probabilities_with_data_return_gpu_dimreduce(topics_tuple, contents_tuple, full_topics_d1, full_contents_d1,
                               full_topics_d1fp, full_contents_d1fp)
 def obtain_tuple_based_probas_stepup_dimreduce(proba_callback, topics_tuple, contents_tuple, full_topics_d1, full_contents_d1,
-                              full_topics_d1fp, full_contents_d1fp, batch_size=70000):
+                              full_topics_d1fp, full_contents_d1fp, batch_size=400000):
     max_batch_size = np.inf
     length = len(topics_tuple)
     assert length == len(contents_tuple)
@@ -342,7 +348,7 @@ def obtain_tuple_based_probas_stepup_dimreduce(proba_callback, topics_tuple, con
             continuous_success += 1
             if continuous_success == 3:
                 continuous_success = 0
-                batch_size = min(batch_size + 6000, max_batch_size)
+                batch_size = min(batch_size + 50000, max_batch_size)
 
             if tlow - prev_tlow > print_length:
                 ctime = time.time() - ctime
@@ -350,7 +356,7 @@ def obtain_tuple_based_probas_stepup_dimreduce(proba_callback, topics_tuple, con
                 prev_tlow = tlow
                 ctime = time.time()
         else:
-            batch_size = max(batch_size - 1500, 1)
+            batch_size = max(batch_size - 50000, 1)
             max_batch_size = batch_size
             continuous_success = 0
         gc.collect()
@@ -364,7 +370,7 @@ def predict_probabilities_direct_gpu_stepup_dimreduce2(proba_callback, topics_tu
     return proba_callback.predict_probabilities_with_data_return_gpu_dimreduce(topics_tuple, contents_tuple, full_topics_d1, full_contents_d1,
                               full_topics_d1fp, full_contents_d1fp)
 def obtain_tuple_based_probas_stepup_dimreduce2(proba_callback, topics_tuple, contents_tuple, full_topics_d1, full_contents_d1,
-                              full_topics_d1fp, full_contents_d1fp, batch_size=70000):
+                              full_topics_d1fp, full_contents_d1fp, batch_size=400000):
     max_batch_size = np.inf
     length = len(topics_tuple)
     assert length == len(contents_tuple)
@@ -393,7 +399,7 @@ def obtain_tuple_based_probas_stepup_dimreduce2(proba_callback, topics_tuple, co
             continuous_success += 1
             if continuous_success == 3:
                 continuous_success = 0
-                batch_size = min(batch_size + 6000, max_batch_size)
+                batch_size = min(batch_size + 50000, max_batch_size)
 
             if tlow - prev_tlow > print_length:
                 ctime = time.time() - ctime
@@ -401,7 +407,7 @@ def obtain_tuple_based_probas_stepup_dimreduce2(proba_callback, topics_tuple, co
                 prev_tlow = tlow
                 ctime = time.time()
         else:
-            batch_size = max(batch_size - 1500, 1)
+            batch_size = max(batch_size - 50000, 1)
             max_batch_size = batch_size
             continuous_success = 0
         gc.collect()

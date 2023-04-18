@@ -155,6 +155,70 @@ def generate_info_from_folder(combined_train_folder, combined_test_folder, use_m
                                                                      data_bert_tree_struct.has_close_correlations, rspack)
     return rspack
 
+def generate_info_from_double_array(train_content_ids, train_topic_ids, test_content_ids, test_topic_ids):
+    rspack = RestrictionSamplerPack()
+
+    rspack.train_content_ids = train_content_ids
+    rspack.train_topic_ids = train_topic_ids
+
+    rspack.test_content_ids = test_content_ids
+    rspack.test_topic_ids = test_topic_ids
+
+    rspack.has_correlations_train_contents, rspack.has_correlations_train_topics = [], []
+    rspack.has_correlations_test_contents, rspack.has_correlations_test_topics = [], []
+
+    rspack.has_correlations_train_contents_overshoot2, rspack.has_correlations_train_topics_overshoot2 = [], []
+    rspack.has_correlations_test_contents_overshoot2, rspack.has_correlations_test_topics_overshoot2 = [], []
+
+    add_potentials_into_list(rspack.has_correlations_train_contents, rspack.has_correlations_train_topics,
+                             data_bert.has_correlation_contents,
+                             data_bert.has_correlation_topics, train_content_ids, train_topic_ids)
+    add_potentials_into_list(rspack.has_correlations_train_contents_overshoot2,
+                             rspack.has_correlations_train_topics_overshoot2,
+                             data_bert_tree_struct.has_close_correlation_contents,
+                             data_bert_tree_struct.has_close_correlation_topics, train_content_ids, train_topic_ids)
+
+    add_potentials_into_list(rspack.has_correlations_test_contents, rspack.has_correlations_test_topics,
+                             data_bert.has_correlation_contents,
+                             data_bert.has_correlation_topics, test_content_ids, test_topic_ids)
+    add_potentials_into_list(rspack.has_correlations_test_contents_overshoot2,
+                             rspack.has_correlations_test_topics_overshoot2,
+                             data_bert_tree_struct.has_close_correlation_contents,
+                             data_bert_tree_struct.has_close_correlation_topics, test_content_ids, test_topic_ids)
+
+    rspack.has_correlations_train_contents = np.array(rspack.has_correlations_train_contents, dtype=np.int32)
+    rspack.has_correlations_train_topics = np.array(rspack.has_correlations_train_topics, dtype=np.int32)
+    rspack.has_correlations_test_contents = np.array(rspack.has_correlations_test_contents, dtype=np.int32)
+    rspack.has_correlations_test_topics = np.array(rspack.has_correlations_test_topics, dtype=np.int32)
+
+    rspack.has_correlations_train_contents_overshoot2 = np.array(rspack.has_correlations_train_contents_overshoot2, dtype=np.int32)
+    rspack.has_correlations_train_topics_overshoot2 = np.array(rspack.has_correlations_train_topics_overshoot2, dtype=np.int32)
+    rspack.has_correlations_test_contents_overshoot2 = np.array(rspack.has_correlations_test_contents_overshoot2, dtype=np.int32)
+    rspack.has_correlations_test_topics_overshoot2 = np.array(rspack.has_correlations_test_topics_overshoot2, dtype=np.int32)
+
+    rspack.has_correlations_train_contents, rspack.has_correlations_train_topics = sort_according_to_topic(rspack.has_correlations_train_contents, rspack.has_correlations_train_topics)
+    rspack.has_correlations_test_contents, rspack.has_correlations_test_topics = sort_according_to_topic(rspack.has_correlations_test_contents, rspack.has_correlations_test_topics)
+    rspack.has_correlations_train_contents_overshoot2, rspack.has_correlations_train_topics_overshoot2 = sort_according_to_topic(rspack.has_correlations_train_contents_overshoot2, rspack.has_correlations_train_topics_overshoot2)
+    rspack.has_correlations_test_contents_overshoot2, rspack.has_correlations_test_topics_overshoot2 = sort_according_to_topic(rspack.has_correlations_test_contents_overshoot2, rspack.has_correlations_test_topics_overshoot2)
+
+    gc.collect()
+
+    rspack.default_dampening_sampler_instance = DampeningSampler(rspack.has_correlations_train_topics, rspack.has_correlations_train_contents,
+                                                          rspack.has_correlations_test_topics, rspack.has_correlations_test_contents, data_bert.has_correlations, rspack)
+    rspack.default_dampening_sampler_overshoot2_instance = DampeningSampler(rspack.has_correlations_train_topics_overshoot2, rspack.has_correlations_train_contents_overshoot2,
+                                                          rspack.has_correlations_test_topics_overshoot2, rspack.has_correlations_test_contents_overshoot2, data_bert_tree_struct.has_close_correlations, rspack)
+
+    rspack.default_dampening_sampler_one_nores_instance = DampeningSampler(data_bert.has_correlation_train_topics,
+                                                          data_bert.has_correlation_train_contents,
+                                                          data_bert.has_correlation_test_topics, data_bert.has_correlation_test_contents,
+                                                          data_bert.has_correlations, rspack)
+    rspack.default_dampening_sampler_one_nores_overshoot2_instance = DampeningSampler(data_bert_tree_struct.has_close_correlation_train_topics,
+                                                                     data_bert_tree_struct.has_close_correlation_train_contents,
+                                                                     data_bert_tree_struct.has_close_correlation_test_topics,
+                                                                     data_bert_tree_struct.has_close_correlation_test_contents,
+                                                                     data_bert_tree_struct.has_close_correlations, rspack)
+    return rspack
+
 class DampeningSampler(data_bert_sampler.SamplerBase):
     def __init__(self, has_cor_train_topics, has_cor_train_contents, has_cor_test_topics, has_cor_test_contents,
                  has_correlations_function, rspack):
@@ -168,15 +232,22 @@ class DampeningSampler(data_bert_sampler.SamplerBase):
         self.choice_gen = np.random.default_rng()
         self.has_correlations_function = has_correlations_function
         self.rspack = rspack
+        self.square_boost_ratio = 1.0
+
+    def set_square_boost_ratio(self, square_boost_ratio):
+        self.square_boost_ratio = square_boost_ratio
 
     # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
     def obtain_train_sample(self, sample_size):
-        has_cor_choice = self.choice_gen.choice(len(self.has_cor_train_topics), sample_size // 2, replace=False)
+        if sample_size >= len(self.has_cor_train_topics):
+            has_cor_choice = np.arange(len(self.has_cor_train_topics))
+        else:
+            has_cor_choice = self.choice_gen.choice(len(self.has_cor_train_topics), sample_size // 2, replace=False)
         topics = self.has_cor_train_topics[has_cor_choice]
         contents = self.has_cor_train_contents[has_cor_choice]
         cors = np.ones(len(topics))
 
-        topics2, contents2, cors2, x = self.obtain_train_square_sample(sample_size // 2)
+        topics2, contents2, cors2, x = self.obtain_train_square_sample(int(self.square_boost_ratio * sample_size / 2))
         topics = np.concatenate((topics, topics2))
         contents = np.concatenate((contents, contents2))
         cors = np.concatenate((cors, cors2))
@@ -185,12 +256,15 @@ class DampeningSampler(data_bert_sampler.SamplerBase):
 
     # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
     def obtain_test_sample(self, sample_size):
-        has_cor_choice = self.choice_gen.choice(len(self.has_cor_test_topics), sample_size // 2, replace=False)
+        if sample_size >= len(self.has_cor_test_topics):
+            has_cor_choice = np.arange(len(self.has_cor_test_topics))
+        else:
+            has_cor_choice = self.choice_gen.choice(len(self.has_cor_test_topics), sample_size // 2, replace=False)
         topics = self.has_cor_test_topics[has_cor_choice]
         contents = self.has_cor_test_contents[has_cor_choice]
         cors = np.ones(len(topics))
 
-        topics2, contents2, cors2, x = self.obtain_test_square_sample(sample_size // 2)
+        topics2, contents2, cors2, x = self.obtain_test_square_sample(int(self.square_boost_ratio * sample_size / 2))
         topics = np.concatenate((topics, topics2))
         contents = np.concatenate((contents, contents2))
         cors = np.concatenate((cors, cors2))
@@ -202,17 +276,20 @@ class DampeningSampler(data_bert_sampler.SamplerBase):
         """if global_epoch > self.prev_epoch:
             self.draw_new_train_test()
             self.prev_epoch = global_epoch """
-        choice = self.choice_gen.choice(len(self.rspack.train_content_ids), sample_size, replace=False)
+        if sample_size >= len(self.rspack.train_content_ids):
+            choice = np.arange(len(self.rspack.train_content_ids))
+        else:
+            choice = self.choice_gen.choice(len(self.rspack.train_content_ids), sample_size, replace=False)
         contents = self.rspack.train_content_ids[choice]
         topics = self.rspack.train_topic_ids[choice]
         return topics, contents, self.has_correlations_function(contents, topics), None
 
     # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
     def obtain_test_square_sample(self, sample_size):
-        """if global_epoch > self.prev_epoch:
-            self.draw_new_train_test()
-            self.prev_epoch = global_epoch """
-        choice = self.choice_gen.choice(len(self.rspack.test_content_ids), sample_size, replace=False)
+        if sample_size >= len(self.rspack.test_content_ids):
+            choice = np.arange(len(self.rspack.test_content_ids))
+        else:
+            choice = self.choice_gen.choice(len(self.rspack.test_content_ids), sample_size, replace=False)
         contents = self.rspack.test_content_ids[choice]
         topics = self.rspack.test_topic_ids[choice]
         return topics, contents, self.has_correlations_function(contents, topics), None

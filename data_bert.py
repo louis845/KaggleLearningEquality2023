@@ -189,7 +189,10 @@ rng_seed = np.random.default_rng()
 # IMPORTANT: note that corr_contents_arr and corr_topics_arr have to ONLY contain contents and topics that are from topics_restricted
 # and contents_restricted.
 def obtain_general_sample(one_sample_size, zero_sample_size, corr_contents_arr, corr_topics_arr, contents_restricted, topics_restricted):
-    one_samples = rng_seed.choice(len(corr_topics_arr), one_sample_size, replace = False)
+    if one_sample_size >= len(corr_topics_arr):
+        one_samples = np.arange(len(corr_topics_arr))
+    else:
+        one_samples = rng_seed.choice(len(corr_topics_arr), one_sample_size, replace=False)
     topics_num_id = corr_topics_arr[one_samples]
     contents_num_id = corr_contents_arr[one_samples]
     cor = np.ones(len(one_samples))
