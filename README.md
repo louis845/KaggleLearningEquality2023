@@ -1,6 +1,8 @@
 # KaggleLearningEquality2023
 Repo for project for Kaggle Learning Equality 2023 Competition.
  * https://www.kaggle.com/competitions/learning-equality-curriculum-recommendations
+ 
+Mainly used Tensorflow Keras for training custom models.
 
 # Files
  * Translation
