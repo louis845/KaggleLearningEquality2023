@@ -31,6 +31,12 @@ Repo for project for Kaggle Learning Equality 2023 Competition.
 
 ![alt text](model_diagram1.png "dragram")
 
-Sentence transformers: https://www.sbert.net/
-ctranslate2: https://github.com/OpenNMT/CTranslate2
-OpusMT translation models: https://github.com/Helsinki-NLP/Opus-MT
+ * Sentence transformers: https://www.sbert.net/
+ * ctranslate2: https://github.com/OpenNMT/CTranslate2
+ * OpusMT translation models: https://github.com/Helsinki-NLP/Opus-MT
+
+# model_bert_fix_stepup (precise model)
+![alt text](model_diagram2.png "dragram")
+
+ * Overshoot correlation means that, for a $(\text{topic}, \text{content}) \in \text{Topic} \times \text{Content}$ tuple, there is a $\text{topic}'$ close to $\text{topic}$ in the topic tree such that $(\text{topic}', \text{content})$ are correlated. This "relaxes" the correlation condition.
+ * The overshoot correlation is used only in training, not in inference.
