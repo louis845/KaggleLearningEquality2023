@@ -23,12 +23,14 @@ contents_availability = np.zeros(shape = (len(contents), 3), dtype = bool)
 contents_availability[:, 0] = np.load(config.resources_path + "bert_tokens/contents_description/has_content_mask.npy")
 contents_availability[:, 1] = np.load(config.resources_path + "bert_tokens/contents_title/has_content_mask.npy")
 contents_availability[:, 2] = np.logical_or(contents_availability[:, 0], contents_availability[:, 1])
+contents_availability_num_id = np.where(np.logical_or(contents_availability[:, 0], contents_availability[:, 1]))[0]
 contents_availability = pd.DataFrame(data = contents_availability, columns = ["description", "title", "some_available"], index = contents.index)
 
 topics_availability = np.zeros(shape = (len(topics), 3), dtype = bool)
 topics_availability[:, 0] = np.load(config.resources_path + "bert_tokens/topics_description/has_content_mask.npy")
 topics_availability[:, 1] = np.load(config.resources_path + "bert_tokens/topics_title/has_content_mask.npy")
 topics_availability[:, 2] = np.logical_or(topics_availability[:, 0], topics_availability[:, 1])
+topics_availability_num_id = np.where(np.logical_or(topics_availability[:, 0], topics_availability[:, 1]))[0]
 topics_availability = pd.DataFrame(data = topics_availability, columns = ["description", "title", "some_available"], index = topics.index)
 
 learnable_contents = contents_availability.loc[contents_availability["some_available"]].index
@@ -70,10 +72,10 @@ test_contents = filter_channel_contents(test_data_channels, learnable_contents)
 test_topics = filter_channel_topics(test_data_channels, learnable_topics)
 
 # reorder train test split into natural order
-train_contents_num_id = np.sort(contents_inv_map[train_contents].to_numpy())
-train_topics_num_id = np.sort(topics_inv_map[train_topics].to_numpy())
-test_contents_num_id = np.sort(contents_inv_map[test_contents].to_numpy())
-test_topics_num_id = np.sort(topics_inv_map[test_topics].to_numpy())
+train_contents_num_id = np.unique(contents_inv_map[train_contents].to_numpy())
+train_topics_num_id = np.unique(topics_inv_map[train_topics].to_numpy())
+test_contents_num_id = np.unique(contents_inv_map[test_contents].to_numpy())
+test_topics_num_id = np.unique(topics_inv_map[test_topics].to_numpy())
 
 train_contents = contents.index[train_contents_num_id]
 train_topics = topics.index[train_topics_num_id]
@@ -89,6 +91,7 @@ def fast_contains(sorted_arr, val):
 
 # see if sorted_arr contains vals, returns a bool array
 def fast_contains_multi(sorted_arr, vals):
+    assert (sorted_arr[1:] < sorted_arr[:-1]).sum() == 0
     return np.searchsorted(sorted_arr, vals, side = "right") > np.searchsorted(sorted_arr, vals, side = "left")
 
 if os.path.isdir(config.resources_path + "data_bert/"):

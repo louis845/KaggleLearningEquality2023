@@ -27,6 +27,7 @@ for lang in langs:
     source_opus_model_dir = "data/opus_translation_models/" + lang + "-en"
     target_dir = "data/ct2_models_from_opus/" + lang + "-en"
     if not os.path.isdir(target_dir):
+        print("Converting " + lang + "...")
         converter = ctranslate2.converters.OpusMTConverter(model_dir = source_opus_model_dir)
         converter.convert(target_dir)
         print("Conversion of lang "+ lang + " success!")
