@@ -30,3 +30,7 @@ Repo for project for Kaggle Learning Equality 2023 Competition.
 # Model pipeline
 
 ![alt text](model_diagram1.png "dragram")
+
+Sentence transformers: https://www.sbert.net/
+ctranslate2: https://github.com/OpenNMT/CTranslate2
+OpusMT translation models: https://github.com/Helsinki-NLP/Opus-MT
