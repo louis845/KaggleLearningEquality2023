@@ -1,11 +1,15 @@
 # class to manage sampling and correlation verification. this class is the most general sampling from data method, which
 # supports sampling from overshoot samples, tree samples and so on. also, it supports dividing the sampled parts into
 # disjoint subsets, where the samples from each subset are drawn from different respective overshoot samples.
+import gc
 import math
+import time
+
 import numpy as np
 import data_bert
 import data_bert_tree_struct
 
+import data_bert_hacky_disable_tree_struct
 
 class SamplerBase:
 
@@ -83,6 +87,32 @@ class DefaultSampler(SamplerBase):
     # given the (content_id, topic_id, class) tuple, determine whether or not there is a correlation between them.
     def has_correlations(self, content_num_ids, topic_num_ids, class_ids):
         return self.sample_verification_function(content_num_ids, topic_num_ids)
+
+class ReversedSampler(SamplerBase):
+    def __init__(self, sampler):
+        SamplerBase.__init__(self)
+        assert not sampler.is_tree_sampler()
+        self.sampler = sampler
+
+    # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
+    def obtain_train_sample(self, sample_size):
+        return self.sampler.obtain_test_sample(sample_size)
+
+    # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
+    def obtain_test_sample(self, sample_size):
+        return self.sampler.obtain_train_sample(sample_size)
+
+    # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
+    def obtain_train_square_sample(self, sample_size):
+        return self.sampler.obtain_test_square_sample(sample_size)
+
+    # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
+    def obtain_test_square_sample(self, sample_size):
+        return self.sampler.obtain_train_square_sample(sample_size)
+
+    # given the (content_id, topic_id, class) tuple, determine whether or not there is a correlation between them.
+    def has_correlations(self, content_num_ids, topic_num_ids, class_ids):
+        return self.sampler.has_correlations(content_num_ids, topic_num_ids, class_ids)
 
 def obtain_tree_train_sample0(one_sample_size, zero_sample_size):
     return data_bert_tree_struct.obtain_tree_train_sample(one_sample_size, zero_sample_size, 0)
@@ -219,13 +249,13 @@ class DefaultTreeSampler(SamplerBase):
 
             self.sample_tree_abundances_train = data_bert_tree_struct.topic_trees_filtered_abundances_train
             self.sample_tree_abundances_test = data_bert_tree_struct.topic_trees_filtered_abundances_test
-            self.generation_sizes = [4, 12, 14, 25, 25]
+            self.generation_sizes = [3, 11, 13, 24, 24]
         else:
             assert len(sample_tree_generation_functions) == len(sample_tree_verification_functions)
             assert len(sample_tree_verification_functions)-1 == len(sample_tree_abundances_train)
             assert len(sample_tree_abundances_train) == len(sample_tree_abundances_test)
             assert len(sample_tree_abundances_test) == len(generation_sizes)
-            
+
             self.sample_tree_generation_functions = sample_tree_generation_functions
             self.sample_tree_verification_functions = sample_tree_verification_functions
             self.sample_tree_abundances_train = sample_tree_abundances_train
@@ -380,6 +410,63 @@ class DefaultTreeSampler(SamplerBase):
     def is_tree_sampler(self):
         return True
 
+class ReversedTreeSampler(SamplerBase):
+    # tree sampler, but reverses train and test sets.
+    def __init__(self, tree_sampler):
+        SamplerBase.__init__(self)
+        assert tree_sampler.is_tree_sampler()
+        self.tree_sampler = tree_sampler
+
+    def obtain_train_sample(self, sample_size):
+        return self.tree_sampler.obtain_test_sample(sample_size)
+
+    # returns a sequence o 6-tuples, topics_num_id, contents_num_id, correlations,
+    # classes, tree_levels, abundance_multipliers
+
+    # the number of tree tcs are always square and of fixed size. the sample_size argument below
+    # controls the size of the fine grained samples.
+    def obtain_test_sample(self, sample_size):
+        return self.tree_sampler.obtain_train_sample(sample_size)
+
+    def obtain_train_notree_sample(self, sample_size):
+        return self.tree_sampler.obtain_test_notree_sample(sample_size)
+
+    def obtain_test_notree_sample(self, sample_size):
+        return self.tree_sampler.obtain_train_notree_sample(sample_size)
+
+    def obtain_train_square_sample(self, sample_size):
+        raise Exception("This function is not supported for tree samplers.")
+
+    # returns a sequence o 4-tuples, topics_num_id, contents_num_id, correlations, classes.
+    def obtain_test_square_sample(self, sample_size):
+        raise Exception("This function is not supported for tree samplers.")
+
+    def obtain_tree_train_sample(self, sample_size, level):
+        return self.tree_sampler.obtain_tree_test_sample(sample_size, level)
+
+    def obtain_tree_test_sample(self, sample_size, level):
+        return self.tree_sampler.obtain_tree_train_sample(sample_size, level)
+
+    def obtain_tree_train_square_sample(self, sample_size, level):
+        return self.tree_sampler.obtain_tree_test_square_sample(sample_size, level)
+
+    def obtain_tree_test_square_sample(self, sample_size, level):
+        return self.tree_sampler.obtain_tree_train_square_sample(sample_size, level)
+
+    # given the (content_id, topic_id, class) tuple, determine whether or not there is a correlation between them.
+    def has_correlations(self, content_num_ids, topic_num_ids, class_ids):
+        raise Exception("This function is not supported for tree samplers.")
+
+    # check if there are any correlations at the individual (last) level.
+    def has_correlations_individual(self, content_num_ids, topic_num_ids):
+        return self.tree_sampler.has_correlations_individual(content_num_ids, topic_num_ids)
+
+    def has_correlations_tree_level(self, content_num_ids, topic_levelk_ids, level):
+        return self.tree_sampler.has_correlations_tree_level(content_num_ids, topic_levelk_ids, level)
+
+    def is_tree_sampler(self):
+        return True
+
 # This class is to draw mixed samples from the
 class MixedSampler(SamplerBase):
     # draws from a list of samplers, with given probabilities. If sampler_probas is none, assumes uniformly distributed
@@ -490,16 +577,57 @@ default_sampler_overshoot3_instance = DefaultSampler(sample_generation_functions
                                                     },
                                                      sample_verification_function = data_bert_tree_struct.has_further_correlations)
 
-default_tree_sampler_instance = DefaultTreeSampler()
+default_combined_sampler_instance = DefaultSampler(sample_generation_functions = {
+                                                        "train_sample": data_bert.obtain_combined_sample,
+                                                        "test_sample": data_bert.obtain_combined_sample,
+                                                        "train_square_sample": data_bert.obtain_combined_square_sample,
+                                                        "test_square_sample": data_bert.obtain_combined_square_sample
+                                                    },
+                                                     sample_verification_function = data_bert.has_correlations)
+default_combined_sampler_overshoot2_instance = DefaultSampler(sample_generation_functions = {
+                                                        "train_sample": data_bert_tree_struct.obtain_combined_sample,
+                                                        "test_sample": data_bert_tree_struct.obtain_combined_sample,
+                                                        "train_square_sample": data_bert_tree_struct.obtain_combined_square_sample,
+                                                        "test_square_sample": data_bert_tree_struct.obtain_combined_square_sample
+                                                    },
+                                                     sample_verification_function = data_bert_tree_struct.has_close_correlations)
 
-overshoot_generation = default_tree_sampler_instance.sample_tree_generation_functions.copy()
-overshoot_generation[-1] = {
-                "train_sample": data_bert_tree_struct.obtain_train_sample,
-                "test_sample": data_bert_tree_struct.obtain_test_sample,
-                "train_square_sample": data_bert_tree_struct.obtain_train_square_sample,
-                "test_square_sample": data_bert_tree_struct.obtain_test_square_sample
-            }
-overshoot_veri = default_tree_sampler_instance.sample_tree_verification_functions.copy()
-overshoot_veri[-1] = data_bert_tree_struct.has_close_correlations
-default_tree_overshoot_sampler_instance = DefaultTreeSampler(sample_tree_generation_functions=overshoot_generation, sample_tree_verification_functions=overshoot_veri, sample_tree_abundances_train=data_bert_tree_struct.topic_trees_filtered_abundances_train,
-                                                             sample_tree_abundances_test=data_bert_tree_struct.topic_trees_filtered_abundances_test, generation_sizes=[4, 9, 10, 17, 17])
+if data_bert_hacky_disable_tree_struct.enable_tree_struct:
+    default_tree_sampler_instance = DefaultTreeSampler()
+
+    overshoot_generation = default_tree_sampler_instance.sample_tree_generation_functions.copy()
+    overshoot_generation[-1] = {
+                    "train_sample": data_bert_tree_struct.obtain_train_sample,
+                    "test_sample": data_bert_tree_struct.obtain_test_sample,
+                    "train_square_sample": data_bert_tree_struct.obtain_train_square_sample,
+                    "test_square_sample": data_bert_tree_struct.obtain_test_square_sample
+                }
+    overshoot_veri = default_tree_sampler_instance.sample_tree_verification_functions.copy()
+    overshoot_veri[-1] = data_bert_tree_struct.has_close_correlations
+    default_tree_overshoot_sampler_instance = DefaultTreeSampler(sample_tree_generation_functions=overshoot_generation, sample_tree_verification_functions=overshoot_veri, sample_tree_abundances_train=data_bert_tree_struct.topic_trees_filtered_abundances_train,
+                                                                 sample_tree_abundances_test=data_bert_tree_struct.topic_trees_filtered_abundances_test, generation_sizes=[4, 9, 10, 17, 17])
+
+    default_combined_tree_sampler_instance = DefaultTreeSampler()
+
+    overshoot_generation = default_tree_sampler_instance.sample_tree_generation_functions.copy()
+    overshoot_generation[-1] = {
+        "train_sample": data_bert_tree_struct.obtain_train_sample,
+        "test_sample": data_bert_tree_struct.obtain_test_sample,
+        "train_square_sample": data_bert_tree_struct.obtain_train_square_sample,
+        "test_square_sample": data_bert_tree_struct.obtain_test_square_sample
+    }
+    overshoot_veri = default_tree_sampler_instance.sample_tree_verification_functions.copy()
+    overshoot_veri[-1] = data_bert_tree_struct.has_close_correlations
+    default_tree_overshoot_sampler_instance = DefaultTreeSampler(sample_tree_generation_functions=overshoot_generation,
+                                                                 sample_tree_verification_functions=overshoot_veri,
+                                                                 sample_tree_abundances_train=data_bert_tree_struct.topic_trees_filtered_abundances_train,
+                                                                 sample_tree_abundances_test=data_bert_tree_struct.topic_trees_filtered_abundances_test,
+                                                                 generation_sizes=[3, 11, 13, 24, 24])
+
+default_reversed_sampler_instance = ReversedSampler(default_sampler_instance)
+default_reversed_sampler_overshoot2_instance = ReversedSampler(default_sampler_overshoot2_instance)
+default_reversed_sampler_overshoot3_instance = ReversedSampler(default_sampler_overshoot3_instance)
+
+if data_bert_hacky_disable_tree_struct.enable_tree_struct:
+    default_reversed_tree_sampler = ReversedTreeSampler(default_tree_sampler_instance)
+    default_reversed_tree_sampler_overshoot = ReversedTreeSampler(default_tree_overshoot_sampler_instance)

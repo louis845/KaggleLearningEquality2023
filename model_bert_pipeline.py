@@ -1,8 +1,13 @@
+import data_bert_hacky_disable_tree_struct
+data_bert_hacky_disable_tree_struct.enable_tree_struct = False
+
 import data_bert
 import data_bert_sampler
 import data_bert_tree_struct
 import model_bert_fix
 import model_bert_fix_stepup
+import model_bert_fix_3stepup
+import model_bert_fix_stepup_dimreduce
 import config
 import time
 import tensorflow as tf
@@ -12,6 +17,7 @@ import pandas as pd
 import os
 import gc
 import sys
+import data_bert_restriction
 # from IPython.display import Markdown
 # import matplotlib.pyplot as plt
 
@@ -49,7 +55,7 @@ def train_model(model_name, custom_metrics = None, custom_stopping_func = None, 
 
 def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None, custom_tuple_choice_sampler_overshoot = None,
                        init_noise_topics = 0.05, init_noise_overshoot_topics = 0.2, init_noise_contents = 0.05, init_noise_overshoot_contents = 0.2,
-                       init_noise_lang = 0.02, init_noise_overshoot_lang = 0.3, weight_decay = 0.0005):
+                       init_noise_lang = 0.2, init_noise_overshoot_lang = 0.3, weight_decay = 0.0005):
     model = model_bert_fix_stepup.Model(units_size = 512, init_noise_topics = init_noise_topics, init_noise_overshoot_topics = init_noise_overshoot_topics,
                                         init_noise_contents = init_noise_contents, init_noise_overshoot_contents = init_noise_overshoot_contents,
                                         init_noise_lang = init_noise_lang, init_noise_overshoot_lang = init_noise_overshoot_lang)
@@ -105,7 +111,223 @@ def train_model_stepup(model_name, custom_metrics = None, custom_stopping_func =
 
     del model, training_sampler
 
+def train_model_stepup_small(model_name, custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None, custom_tuple_choice_sampler_overshoot = None,
+                       init_noise_topics = 0.05, init_noise_overshoot_topics = 0.2, init_noise_contents = 0.05, init_noise_overshoot_contents = 0.2,
+                       init_noise_lang = 0.2, init_noise_overshoot_lang = 0.3, weight_decay = 0.0005):
+    model = model_bert_fix_stepup.Model(units_size = 256, init_noise_topics = init_noise_topics, init_noise_overshoot_topics = init_noise_overshoot_topics,
+                                        init_noise_contents = init_noise_contents, init_noise_overshoot_contents = init_noise_overshoot_contents,
+                                        init_noise_lang = init_noise_lang, init_noise_overshoot_lang = init_noise_overshoot_lang)
+    modeldir = config.training_models_path + model_name
+    checkpoint_file = modeldir + "/{epoch:07d}.ckpt"
+    logging_file = modeldir + "/logfile.csv"
 
+    training_sampler = model_bert_fix.TrainingSampler(embedded_vectors_folder = config.resources_path + "sbert_vectors/mininet_L12_english384/",
+                                   contents_one_hot_file = config.resources_path + "one_hot_languages/contents_lang_train.npy",
+                                   topics_one_hot_file = config.resources_path + "one_hot_languages/topics_lang_train.npy", device = "cpu")
+    print("postsampler")
+    model.compile(weight_decay = weight_decay, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.0005, decay_steps = 5000, alpha = 0.1)) # 0.0005
+    if custom_metrics is None:
+        custom_metrics = model_bert_fix_stepup.default_metrics
+    if custom_stopping_func is None:
+        custom_stopping_func = model_bert_fix_stepup.DefaultStoppingFunc(modeldir)
+    model.set_training_params(12500, training_sampler = training_sampler, training_max_size = 12500, custom_metrics = custom_metrics, custom_stopping_func = custom_stopping_func,
+                              custom_tuple_choice_sampler = custom_tuple_choice_sampler, custom_tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot)
+
+    if not os.path.isdir(modeldir + "/"):
+        os.mkdir(modeldir + "/")
+
+    ctime = time.time()
+
+    callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_file, save_weights_only = False, verbose = 0, save_freq = 10)
+    csv_logger = tf.keras.callbacks.CSVLogger(logging_file, separator=',', append=False)
+
+    hist = model.fit(np.array([1, 2]), epochs = 6000, callbacks=[callback, csv_logger], verbose = 2, steps_per_epoch = 1)
+    ctime = time.time() - ctime
+    print(ctime)
+    model.save_weights(modeldir + "/final_epoch.ckpt")
+
+    del model, training_sampler
+
+def train_model_stepup_dimreduce(model_name, custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None, custom_tuple_choice_sampler_overshoot = None,
+                       init_noise_topics = 0.05, init_noise_overshoot_topics = 0.2, init_noise_contents = 0.05, init_noise_overshoot_contents = 0.2,
+                       init_noise_lang = 0.2, init_noise_overshoot_lang = 0.3, weight_decay = 0.0003):
+    model = model_bert_fix_stepup_dimreduce.Model(units_size = 512, init_noise_topics = init_noise_topics, init_noise_overshoot_topics = init_noise_overshoot_topics,
+                                        init_noise_contents = init_noise_contents, init_noise_overshoot_contents = init_noise_overshoot_contents,
+                                        init_noise_lang = init_noise_lang, init_noise_overshoot_lang = init_noise_overshoot_lang)
+    modeldir = config.training_models_path + model_name
+    checkpoint_file = modeldir + "/{epoch:07d}.ckpt"
+    logging_file = modeldir + "/logfile.csv"
+
+    training_sampler = model_bert_fix.TrainingSampler(embedded_vectors_folder = config.resources_path + "sbert_vectors/mininet_L12_english384/",
+                                   contents_one_hot_file = config.resources_path + "one_hot_languages/contents_lang_train.npy",
+                                   topics_one_hot_file = config.resources_path + "one_hot_languages/topics_lang_train.npy", device = "cpu")
+    print("postsampler")
+    model.compile(weight_decay = weight_decay, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.0005, decay_steps = 5000, alpha = 0.1)) # 0.0005)
+    if custom_metrics is None:
+        custom_metrics = model_bert_fix_stepup.default_metrics
+    if custom_stopping_func is None:
+        custom_stopping_func = model_bert_fix_stepup.DefaultStoppingFunc(modeldir)
+    model.set_training_params(9000, training_sampler = training_sampler, training_max_size = 9000, custom_metrics = custom_metrics, custom_stopping_func = custom_stopping_func,
+                              custom_tuple_choice_sampler = custom_tuple_choice_sampler, custom_tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot, model_folder = modeldir)
+
+    if not os.path.isdir(modeldir + "/"):
+        os.mkdir(modeldir + "/")
+
+    ctime = time.time()
+
+    callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_file, save_weights_only = False, verbose = 0, save_freq = 10)
+    csv_logger = tf.keras.callbacks.CSVLogger(logging_file, separator=',', append=False)
+
+    hist = model.fit(np.array([1, 2]), epochs = 6000, callbacks=[callback, csv_logger], verbose = 2, steps_per_epoch = 1)
+    ctime = time.time() - ctime
+    print("finished first stepup time")
+    print(ctime)
+
+    model.save_weights(modeldir + "/final_epoch.ckpt")
+
+    del model, training_sampler
+
+def train_model_stepup_mpnet(model_name, custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None, custom_tuple_choice_sampler_overshoot = None,
+                       init_noise_topics = 0.05, init_noise_overshoot_topics = 0.2, init_noise_contents = 0.05, init_noise_overshoot_contents = 0.2,
+                       init_noise_lang = 0.2, init_noise_overshoot_lang = 0.3, weight_decay = 0.0003):
+    model = model_bert_fix_stepup.Model(units_size = 512, init_noise_topics = init_noise_topics, init_noise_overshoot_topics = init_noise_overshoot_topics,
+                                        init_noise_contents = init_noise_contents, init_noise_overshoot_contents = init_noise_overshoot_contents,
+                                        init_noise_lang = init_noise_lang, init_noise_overshoot_lang = init_noise_overshoot_lang)
+    modeldir = config.training_models_path + model_name
+    checkpoint_file = modeldir + "/{epoch:07d}.ckpt"
+    logging_file = modeldir + "/logfile.csv"
+
+    training_sampler = model_bert_fix.TrainingSamplerMpnet(embedded_vectors_folder = config.resources_path + "sbert_vectors/mpnet_english_finetuned_on_train/",
+                                   contents_one_hot_file = config.resources_path + "one_hot_languages/contents_lang_train.npy",
+                                   topics_one_hot_file = config.resources_path + "one_hot_languages/topics_lang_train.npy", device = "cpu")
+    print("postsampler")
+    model.compile(weight_decay = weight_decay, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.0005, decay_steps = 5000, alpha = 0.1)) # 0.0005)
+    if custom_metrics is None:
+        custom_metrics = model_bert_fix_stepup.default_metrics
+    if custom_stopping_func is None:
+        custom_stopping_func = model_bert_fix_stepup.DefaultStoppingFunc(modeldir)
+    model.set_training_params(9000, training_sampler = training_sampler, training_max_size = 9000, custom_metrics = custom_metrics, custom_stopping_func = custom_stopping_func,
+                              custom_tuple_choice_sampler = custom_tuple_choice_sampler, custom_tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot, train_mpnetmode=True)
+
+    if not os.path.isdir(modeldir + "/"):
+        os.mkdir(modeldir + "/")
+
+    ctime = time.time()
+
+    callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_file, save_weights_only = False, verbose = 0, save_freq = 10)
+    csv_logger = tf.keras.callbacks.CSVLogger(logging_file, separator=',', append=False)
+
+    hist = model.fit(np.array([1, 2]), epochs = 6000, callbacks=[callback, csv_logger], verbose = 2, steps_per_epoch = 1)
+    ctime = time.time() - ctime
+    print("finished first stepup time")
+    print(ctime)
+
+    model.save_weights(modeldir + "/final_epoch.ckpt")
+
+    del model, training_sampler
+
+def train_model_3stepup(model_name, custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None, custom_tuple_choice_sampler_overshoot = None,
+                        init_noise_topics=0.05, init_noise_overshoot_topics=0.2, init_noise_dampen_topics=0.2,
+                        init_noise_contents=0.05, init_noise_overshoot_contents=0.2, init_noise_dampen_contents=0.2,
+                        init_noise_lang=0.2, init_noise_overshoot_lang=0.3, init_noise_dampen_lang=0.3,
+                        weight_decay = 0.0002):
+    model = model_bert_fix_3stepup.Model(units_size = 512, init_noise_topics = init_noise_topics, init_noise_overshoot_topics = init_noise_overshoot_topics,
+                                        init_noise_dampen_topics = init_noise_dampen_topics,  init_noise_contents = init_noise_contents,
+                                        init_noise_overshoot_contents = init_noise_overshoot_contents, init_noise_dampen_contents = init_noise_dampen_contents,
+                                        init_noise_lang = init_noise_lang, init_noise_overshoot_lang = init_noise_overshoot_lang,
+                                        init_noise_dampen_lang = init_noise_dampen_lang)
+
+    rspack = data_bert_restriction.generate_info_from_folder(
+        combined_train_folder="data/model_eval_tree/topics_tree_overshoot_small_trained_on_train_eval_train_COMBINE/",
+        combined_test_folder="data/model_eval_tree/topics_tree_overshoot_small_trained_on_train_eval_test_COMBINE/")
+    model_bert_fix_3stepup.generate_default_metrics(rspack)
+    model.set_sampling_functions_with_pack(rspack)
+
+    modeldir = config.training_models_path + model_name
+    checkpoint_file = modeldir + "/{epoch:07d}.ckpt"
+    logging_file = modeldir + "/logfile.csv"
+
+    training_sampler = model_bert_fix.TrainingSampler(embedded_vectors_folder = config.resources_path + "sbert_vectors/mininet_L12_english384/",
+                                   contents_one_hot_file = config.resources_path + "one_hot_languages/contents_lang_train.npy",
+                                   topics_one_hot_file = config.resources_path + "one_hot_languages/topics_lang_train.npy", device = "cpu")
+    print("postsampler")
+    model.compile(weight_decay = weight_decay, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.0005, decay_steps = 5000, alpha = 0.1)) # 0.0005
+    if custom_metrics is None:
+        custom_metrics = model_bert_fix_3stepup.default_metrics
+    if custom_stopping_func is None:
+        custom_stopping_func = model_bert_fix_stepup.DefaultStoppingFunc(modeldir)
+    model.set_training_params(10000, training_sampler = training_sampler, training_max_size = 10000, custom_metrics = custom_metrics, custom_stopping_func = custom_stopping_func,
+                              custom_tuple_choice_sampler = custom_tuple_choice_sampler, custom_tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot)
+
+    if not os.path.isdir(modeldir + "/"):
+        os.mkdir(modeldir + "/")
+
+    ctime = time.time()
+
+    callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_file, save_weights_only = False, verbose = 0, save_freq = 10)
+    csv_logger = tf.keras.callbacks.CSVLogger(logging_file, separator=',', append=False)
+
+    hist = model.fit(np.array([1, 2]), epochs = 600, callbacks=[callback, csv_logger], verbose = 2, steps_per_epoch = 1)
+    ctime = time.time() - ctime
+    print("finished first stepup time")
+    print(ctime)
+
+    model.save_weights(modeldir + "/final_epoch.ckpt")
+
+    del model, training_sampler
+
+def train_model_stepup_fprecise(model_name, train_content_ids, train_topic_ids, test_content_ids, test_topic_ids,
+                        custom_metrics = None, custom_stopping_func = None, custom_tuple_choice_sampler = None, custom_tuple_choice_sampler_overshoot = None,
+                        init_noise_topics=0.05, init_noise_overshoot_topics=0.2, init_noise_dampen_topics=0.2,
+                        init_noise_contents=0.05, init_noise_overshoot_contents=0.2, init_noise_dampen_contents=0.2,
+                        init_noise_lang=0.2, init_noise_overshoot_lang=0.3, init_noise_dampen_lang=0.3,
+                        weight_decay = 0.0002):
+    model = model_bert_fix_stepup.Model(units_size = 512, init_noise_topics = init_noise_topics, init_noise_overshoot_topics = init_noise_overshoot_topics,
+                                        init_noise_dampen_topics = init_noise_dampen_topics,  init_noise_contents = init_noise_contents,
+                                        init_noise_overshoot_contents = init_noise_overshoot_contents, init_noise_dampen_contents = init_noise_dampen_contents,
+                                        init_noise_lang = init_noise_lang, init_noise_overshoot_lang = init_noise_overshoot_lang,
+                                        init_noise_dampen_lang = init_noise_dampen_lang)
+
+    rspack = data_bert_restriction.generate_info_from_double_array(train_content_ids, train_topic_ids, test_content_ids, test_topic_ids)
+    model_bert_fix_stepup.generate_default_metrics(rspack)
+    model.set_sampling_functions_with_pack(rspack)
+
+    modeldir = config.training_models_path + model_name
+    checkpoint_file = modeldir + "/{epoch:07d}.ckpt"
+    logging_file = modeldir + "/logfile.csv"
+
+    training_sampler = model_bert_fix.TrainingSampler(embedded_vectors_folder = config.resources_path + "sbert_vectors/mininet_L12_english384/",
+                                   contents_one_hot_file = config.resources_path + "one_hot_languages/contents_lang_train.npy",
+                                   topics_one_hot_file = config.resources_path + "one_hot_languages/topics_lang_train.npy", device = "gpu")
+    training_sampler2 = model_bert_fix.TrainingSampler(
+        embedded_vectors_folder=config.resources_path + "sbert_vectors/mpnet_english_finetuned_on_train/",
+        contents_one_hot_file=config.resources_path + "one_hot_languages/contents_lang_train.npy",
+        topics_one_hot_file=config.resources_path + "one_hot_languages/topics_lang_train.npy", device="gpu")
+    print("postsampler")
+    model.compile(weight_decay = weight_decay, learning_rate = tf.keras.optimizers.schedules.CosineDecay(0.0005, decay_steps = 5000, alpha = 0.1)) # 0.0005
+    if custom_metrics is None:
+        custom_metrics = model_bert_fix_stepup.default_ps_metrics
+    if custom_stopping_func is None:
+        custom_stopping_func = model_bert_fix_stepup.DefaultStoppingFunc(modeldir)
+    model.set_training_params(10000, training_sampler = training_sampler, training_sampler2=training_sampler2, training_max_size = 10000, custom_metrics = custom_metrics, custom_stopping_func = custom_stopping_func,
+                              custom_tuple_choice_sampler = custom_tuple_choice_sampler, custom_tuple_choice_sampler_overshoot = custom_tuple_choice_sampler_overshoot)
+
+    if not os.path.isdir(modeldir + "/"):
+        os.mkdir(modeldir + "/")
+
+    ctime = time.time()
+
+    callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_file, save_weights_only = False, verbose = 0, save_freq = 10)
+    csv_logger = tf.keras.callbacks.CSVLogger(logging_file, separator=',', append=False)
+
+    hist = model.fit(np.array([1, 2]), epochs = 600, callbacks=[callback, csv_logger], verbose = 2, steps_per_epoch = 1)
+    ctime = time.time() - ctime
+    print("finished first stepup time")
+    print(ctime)
+
+    model.save_weights(modeldir + "/final_epoch.ckpt")
+
+    del model, training_sampler
 
 """tuple_choice_sampler = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance])
 metrics = model_bert_fix.obtain_overshoot_metric_instance(tuple_choice_sampler)
@@ -115,8 +337,18 @@ tuple_choice_sampler = data_bert_sampler.MixedSampler(sampler_list = [data_bert_
 metrics = model_bert_fix.obtain_overshoot_metric_instance(tuple_choice_sampler)
 train_model("overshoot23", custom_metrics = metrics, custom_tuple_choice_sampler =  tuple_choice_sampler)"""
 
-# train_model_stepup("minilm12_eng_model_stepup_moreunits")
-train_model_stepup("minilm12_eng_model_stepup_moreunits_diffnoise", init_noise_topics=0.01, init_noise_overshoot_topics=0.04)
+"""print("RESTRICTION DATA:")
+print("Using train data: " + sys.argv[1])
+print("Using test data: " + sys.argv[2])
+data_bert_restriction.generate_info_from_folder(config.resources_path + "model_eval_tree/" + sys.argv[1] + "/",
+        config.resources_path + "model_eval_tree/" + sys.argv[2] + "/")"""
+
+"""train_model_stepup("minilm12_eng_model_3stepup_for_precise", init_noise_dampen_topics=0.2, init_noise_dampen_contents=0.2,
+                    init_noise_topics=0.04, init_noise_contents=0.04, weight_decay = 0.00002)"""
+
+train_model_stepup("minilm12_eng_model_stepup_moreprecise", init_noise_topics=0.03, init_noise_contents=0.03)
+
+# train_model_stepup_mpnet("stepup_precise_mpnet")
 
 """tuple_choice_sampler = data_bert_sampler.default_sampler_instance
 tuple_choice_sampler_overshoot = data_bert_sampler.MixedSampler(sampler_list = [data_bert_sampler.default_sampler_instance, data_bert_sampler.default_sampler_overshoot2_instance])

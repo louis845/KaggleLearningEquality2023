@@ -1,4 +1,5 @@
-import copy
+import data_bert_hacky_disable_tree_struct
+
 import data_bert
 import numpy as np
 import pandas as pd
@@ -276,17 +277,18 @@ def generate_further_proximity_correlations():
     has_further_correlation_test_topics = np.array(has_further_correlation_test_topics, np.int32)
     has_further_correlation_test_contents = np.array(has_further_correlation_test_contents, np.int32)
 
-generate_topics_grouping_info()
-generate_topics_contents_correlations(topics_group_filtered, topic_trees_filtered_contents)
-generate_topics_contents_correlations(topics_group_filtered, topic_trees_filtered_contents_train, data_bert.train_contents_num_id)
-generate_topics_contents_correlations(topics_group_filtered, topic_trees_filtered_contents_test, data_bert.test_contents_num_id)
-for k in range(levels + 1):
-    topics_group_filtered[k]["group_train_ids"] = np.unique(topic_trees_filtered_contents_train[k]["topic_id_klevel"])
-    topics_group_filtered[k]["group_test_ids"] = np.unique(topic_trees_filtered_contents_test[k]["topic_id_klevel"])
-generate_abundances()
+if data_bert_hacky_disable_tree_struct.enable_tree_struct:
+    generate_topics_grouping_info()
+    generate_topics_contents_correlations(topics_group_filtered, topic_trees_filtered_contents)
+    generate_topics_contents_correlations(topics_group_filtered, topic_trees_filtered_contents_train, data_bert.train_contents_num_id)
+    generate_topics_contents_correlations(topics_group_filtered, topic_trees_filtered_contents_test, data_bert.test_contents_num_id)
+    for k in range(levels + 1):
+        topics_group_filtered[k]["group_train_ids"] = np.unique(topic_trees_filtered_contents_train[k]["topic_id_klevel"])
+        topics_group_filtered[k]["group_test_ids"] = np.unique(topic_trees_filtered_contents_test[k]["topic_id_klevel"])
+    generate_abundances()
 
-generate_proximity_structure(proximity_structure, distance = 2)
-generate_proximity_structure(further_proximity_structure, distance = 3)
+    generate_proximity_structure(proximity_structure, distance = 2)
+    generate_proximity_structure(further_proximity_structure, distance = 3)
 
 if os.path.isdir(config.resources_path + "data_bert_tree/"):
     has_close_correlation_topics = np.load(config.resources_path + "data_bert_tree/has_close_correlation_topics.npy")
@@ -392,6 +394,37 @@ def obtain_tree_test_square_sample(sample_size, k_level):
     return data_bert.obtain_general_square_sample(sample_size,
                     topic_trees_filtered_contents_test[k_level]["content_id"], topic_trees_filtered_contents_test[k_level]["topic_id_klevel"],
                     data_bert.test_contents_num_id, topics_group_filtered[k_level]["group_test_ids"])
+
+def obtain_tree_combined_sample(one_sample_size, zero_sample_size, k_level):
+    return data_bert.obtain_general_sample(one_sample_size, zero_sample_size,
+                    topic_trees_filtered_contents[k_level]["content_id"], topic_trees_filtered_contents[k_level]["topic_id_klevel"],
+                    data_bert.contents_availability_num_id, topics_group_filtered[k_level]["group_train_ids"])
+def obtain_tree_combined_square_sample(sample_size, k_level):
+    return data_bert.obtain_general_square_sample(sample_size,
+                    topic_trees_filtered_contents[k_level]["content_id"], topic_trees_filtered_contents[k_level]["topic_id_klevel"],
+                    data_bert.contents_availability_num_id, topics_group_filtered[k_level]["group_train_ids"])
+
+has_correlation_combined_contents = None
+has_correlation_combined_topics = None
+
+def generate_combined_cors_close():
+    global has_correlation_combined_contents, has_correlation_combined_topics
+    restrict1 = data_bert.fast_contains_multi(data_bert.contents_availability_num_id, has_close_correlation_contents)
+    has_correlation_combined_contents = has_close_correlation_contents[restrict1]
+    has_correlation_combined_topics = has_close_correlation_topics[restrict1]
+    restrict2 = data_bert.fast_contains_multi(data_bert.topics_availability_num_id, has_correlation_combined_topics)
+    has_correlation_combined_contents = has_correlation_combined_contents[restrict2]
+    has_correlation_combined_topics = has_correlation_combined_topics[restrict2]
+def obtain_combined_sample(one_sample_size, zero_sample_size):
+    if has_correlation_combined_contents is None:
+        generate_combined_cors_close()
+    return data_bert.obtain_general_sample(one_sample_size, zero_sample_size, has_correlation_combined_contents, has_correlation_combined_topics,
+                                           data_bert.contents_availability_num_id, data_bert.topics_availability_num_id)
+def obtain_combined_square_sample(sample_size):
+    if has_correlation_combined_contents is None:
+        generate_combined_cors_close()
+    return data_bert.obtain_general_square_sample(sample_size, has_correlation_combined_contents, has_correlation_combined_topics,
+                                                  data_bert.contents_availability_num_id, data_bert.topics_availability_num_id)
 
 dummy_topics_prod_list = np.empty(shape = len(data_bert.topics_inv_map), dtype = "object")
 

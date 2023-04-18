@@ -179,6 +179,8 @@ def has_correlations_train(content_num_ids, topic_num_ids):
 def has_correlations_test(content_num_ids, topic_num_ids):
     return has_correlations_general(content_num_ids, topic_num_ids, has_correlation_test_contents, has_correlation_test_topics)
 
+rng_seed = np.random.default_rng()
+
 # -------------------------------- randomly sample from data --------------------------------
 # one_sample_size and zero_sample_size are the sizes of sample of ones or sample of zeros. note that the zeros may actually
 # be ones since they are randomly drawn with replacement from the whole topics_restricted and contents_restricted.
@@ -187,13 +189,16 @@ def has_correlations_test(content_num_ids, topic_num_ids):
 # IMPORTANT: note that corr_contents_arr and corr_topics_arr have to ONLY contain contents and topics that are from topics_restricted
 # and contents_restricted.
 def obtain_general_sample(one_sample_size, zero_sample_size, corr_contents_arr, corr_topics_arr, contents_restricted, topics_restricted):
-    one_samples = np.random.choice(len(corr_topics_arr), one_sample_size, replace = False)
+    if one_sample_size >= len(corr_topics_arr):
+        one_samples = np.arange(len(corr_topics_arr))
+    else:
+        one_samples = rng_seed.choice(len(corr_topics_arr), one_sample_size, replace=False)
     topics_num_id = corr_topics_arr[one_samples]
     contents_num_id = corr_contents_arr[one_samples]
     cor = np.ones(len(one_samples))
 
-    zero_sample_topics = topics_restricted[np.random.choice(len(topics_restricted), zero_sample_size)]
-    zero_sample_contents = contents_restricted[np.random.choice(len(contents_restricted), zero_sample_size)]
+    zero_sample_topics = topics_restricted[rng_seed.choice(len(topics_restricted), zero_sample_size)]
+    zero_sample_contents = contents_restricted[rng_seed.choice(len(contents_restricted), zero_sample_size)]
     zeroS_cor = has_correlations_general(zero_sample_contents, zero_sample_topics, corr_contents_arr, corr_topics_arr).astype(cor.dtype)
 
     topics_num_id = np.concatenate((topics_num_id, zero_sample_topics))
@@ -203,8 +208,8 @@ def obtain_general_sample(one_sample_size, zero_sample_size, corr_contents_arr, 
     return topics_num_id, contents_num_id, cor
 
 def obtain_general_square_sample(sample_size, corr_contents_arr, corr_topics_arr, contents_restricted, topics_restricted):
-    topics = topics_restricted[np.random.choice(len(topics_restricted), sample_size, replace = False)]
-    contents = contents_restricted[np.random.choice(len(contents_restricted), sample_size, replace=False)]
+    topics = topics_restricted[rng_seed.choice(len(topics_restricted), sample_size, replace = False)]
+    contents = contents_restricted[rng_seed.choice(len(contents_restricted), sample_size, replace=False)]
 
     topics = np.repeat(topics, sample_size)
     contents = np.tile(contents, sample_size)
@@ -221,5 +226,25 @@ def obtain_train_square_sample(sample_size):
     return obtain_general_square_sample(sample_size, has_correlation_train_contents, has_correlation_train_topics, train_contents_num_id, train_topics_num_id)
 def obtain_test_square_sample(sample_size):
     return obtain_general_square_sample(sample_size, has_correlation_test_contents, has_correlation_test_topics, test_contents_num_id, test_topics_num_id)
+
+has_correlation_combined_contents = None
+has_correlation_combined_topics = None
+
+def generate_combined_cors():
+    global has_correlation_combined_contents, has_correlation_combined_topics
+    restrict1 = fast_contains_multi(contents_availability_num_id, has_correlation_contents)
+    has_correlation_combined_contents = has_correlation_contents[restrict1]
+    has_correlation_combined_topics = has_correlation_topics[restrict1]
+    restrict2 = fast_contains_multi(topics_availability_num_id, has_correlation_combined_topics)
+    has_correlation_combined_contents = has_correlation_combined_contents[restrict2]
+    has_correlation_combined_topics = has_correlation_combined_topics[restrict2]
+def obtain_combined_sample(one_sample_size, zero_sample_size):
+    if has_correlation_combined_contents is None:
+        generate_combined_cors()
+    return obtain_general_sample(one_sample_size, zero_sample_size, has_correlation_combined_contents, has_correlation_combined_topics, contents_availability_num_id, topics_availability_num_id)
+def obtain_combined_square_sample(sample_size):
+    if has_correlation_combined_contents is None:
+        generate_combined_cors()
+    return obtain_general_square_sample(sample_size, has_correlation_combined_contents, has_correlation_combined_topics, contents_availability_num_id, topics_availability_num_id)
 
 gc.collect()

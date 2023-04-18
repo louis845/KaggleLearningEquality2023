@@ -41,10 +41,35 @@ def compute_preorder_id(node, cur_id, topic_id_to_preorder_id, preorder_id_to_to
     node.subtree_end_id = last_id + 1
 
     topic_id_to_subtree_end[node.topic_num_id] = node.subtree_end_id
+
+    """# expand it if it is too small
+    if topic_id_to_subtree_end[node.topic_num_id] - topic_id_to_preorder_id[node.topic_num_id] < 7:
+        cnode = node
+        while cnode.parent is not None:
+            cnode = cnode.parent
+            if cnode.subtree_end_id - cnode.preorder_id >= 7:
+                break
+        topic_id_to_preorder_id[node.topic_num_id] = cnode.preorder_id
+        topic_id_to_subtree_end[node.topic_num_id] = cnode.subtree_end_id """
     return last_id
 
+def compute_expanded_tree(node, min_subtree_size, topic_id_to_mintree_topic_id):
+    for child in node.children:
+        compute_expanded_tree(child, min_subtree_size, topic_id_to_mintree_topic_id)
+
+    if node.subtree_end_id - node.preorder_id < min_subtree_size:
+        cnode = node
+        while cnode.parent is not None:
+            cnode = cnode.parent
+            if cnode.subtree_end_id - cnode.preorder_id >= min_subtree_size:
+                break
+        least_subtree = cnode
+    else:
+        least_subtree = node
+    topic_id_to_mintree_topic_id[node.topic_num_id] = least_subtree.topic_num_id
+
 # topics should be the pandas dataframe for topics.
-def generate_tree_structure_information(topics):
+def generate_tree_structure_information(topics, min_subtree_size=0):
     topics_inv_map = pd.Series(data=np.arange(len(topics)), index=topics.index)
     topic_trees = []
     total_nodes = []
@@ -72,6 +97,13 @@ def generate_tree_structure_information(topics):
     for node in topic_trees:
         cur_id = compute_preorder_id(node, cur_id, topic_id_to_preorder_id, preorder_id_to_topic_id, topic_id_to_subtree_end) + 1
 
+    # given a node in topic_id, return the ancestor node of that node (may be itself)
+    # such that the tree has the minimum size
+    topic_id_to_mintree_topic_id = np.zeros(shape=len(total_nodes), dtype=np.int32)
+
+    for node in topic_trees:
+        compute_expanded_tree(node, min_subtree_size, topic_id_to_mintree_topic_id)
+
     for node in total_nodes:
         node.parent = None
         for k in range(len(node.children)):
@@ -80,7 +112,8 @@ def generate_tree_structure_information(topics):
     del total_nodes, topic_trees
     gc.collect()
     
-    return topics_inv_map, topic_id_to_preorder_id, topic_id_to_subtree_end, preorder_id_to_topic_id
+    return topics_inv_map, topic_id_to_preorder_id, topic_id_to_subtree_end, \
+        preorder_id_to_topic_id, topic_id_to_mintree_topic_id
 
 # LEGACY CODE, used in previous implementations using GPU
 
@@ -221,16 +254,508 @@ def predict_contents(proba_callback, content_ids, topics_restrict, full_topics_d
                                                                    full_contents_data)
     return probabilities
 
+@tf.function
+def obtain_acceptances_fold(proba_callback, content_ids, topics_restrict, full_topics_data, full_contents_data, accept_threshold):
+    contents_id = tf.repeat(content_ids, topics_restrict.shape[0])
+    topics_id = tf.tile(topics_restrict, [content_ids.shape[0]])
+
+    probabilities = proba_callback.predict_probabilities_with_data_return_gpu(topics_id, contents_id, full_topics_data,
+                                                                   full_contents_data)
+    return tf.cast(tf.squeeze(tf.where(probabilities > accept_threshold), axis=1), tf.int32)
+
+def obtain_contentwise_acceptances(proba_callback, topics_restrict, contents_restrict,
+                                      full_topics_data, full_contents_data, accept_threshold = 0.7,
+                                      init_batch_size = 10, init_max_batch_size = 30,
+                                      out_acceptances_folder="contents_acceptances/"):
+    if not os.path.exists(out_acceptances_folder):
+        os.mkdir(out_acceptances_folder)
+    length = len(contents_restrict)
+
+    batch_size = init_batch_size
+    max_batch_size = init_max_batch_size
+    tlow = 0
+    continuous_success = 0
+    prev_tlow = 0
+    ctime = time.time()
+    ctime2 = time.time()
+
+    saved_lengths = []
+    saved_num = 0
+    while tlow < length:
+        thigh = min(tlow + batch_size, length)
+        content_ids = contents_restrict[np.arange(tlow, thigh)]
+        try:
+            acceptances = obtain_acceptances_fold(proba_callback, tf.constant(content_ids), tf.constant(topics_restrict),
+                                             full_topics_data, full_contents_data, accept_threshold)
+        except tf.errors.ResourceExhaustedError as err:
+            acceptances = None
+        if acceptances is not None:
+            np.save(out_acceptances_folder + str(saved_num) + ".npy",
+                acceptances.numpy()
+            )
+            del acceptances
+            saved_num += 1
+            saved_lengths.append(thigh-tlow)
+
+            gc.collect()
+            # if success we update
+            tlow = thigh
+            continuous_success += 1
+            if continuous_success == 3:
+                continuous_success = 0
+                batch_size = min(batch_size + 1, max_batch_size)
+
+            if tlow - prev_tlow > 50:
+                ctime = time.time() - ctime
+                print(tlow, "completed. out of:", length, "  batch size:", batch_size, "  time used:", ctime)
+                prev_tlow = tlow
+                ctime = time.time()
+        else:
+            batch_size = max(batch_size - 1, 1)
+            max_batch_size = batch_size
+            continuous_success = 0
+        gc.collect()
+
+    ctime2 = time.time() - ctime2
+    print("Finished generating contents-topics acceptances! Time: ", ctime2)
+    return np.array(saved_lengths, dtype=np.int32)
+
+@tf.function
+def obtain_acceptances_fold_dimreduce(proba_callback, content_ids, topics_restrict, full_topics_d1, full_contents_d1,
+                                      full_topics_d1fp, full_contents_d1fp, accept_threshold):
+    contents_id = tf.repeat(content_ids, topics_restrict.shape[0])
+    topics_id = tf.tile(topics_restrict, [content_ids.shape[0]])
+
+    probabilities = proba_callback.predict_probabilities_with_data_return_gpu_dimreduce(topics_id, contents_id, full_topics_d1,
+                                                                        full_contents_d1, full_topics_d1fp, full_contents_d1fp)
+    return tf.cast(tf.squeeze(tf.where(probabilities > accept_threshold), axis=1), tf.int32)
+
+def obtain_contentwise_acceptances_dimreduce(proba_callback, topics_restrict, contents_restrict,
+                                      full_topics_d1, full_contents_d1, full_topics_d1fp, full_contents_d1fp,
+                                      accept_threshold = 0.7, init_batch_size = 10, init_max_batch_size = 30,
+                                      out_acceptances_folder="contents_acceptances/"):
+    if not os.path.exists(out_acceptances_folder):
+        os.mkdir(out_acceptances_folder)
+    length = len(contents_restrict)
+
+    batch_size = init_batch_size
+    max_batch_size = init_max_batch_size
+    tlow = 0
+    continuous_success = 0
+    prev_tlow = 0
+    ctime = time.time()
+    ctime2 = time.time()
+
+    saved_lengths = []
+    saved_num = 0
+    while tlow < length:
+        thigh = min(tlow + batch_size, length)
+        content_ids = contents_restrict[np.arange(tlow, thigh)]
+        try:
+            acceptances = obtain_acceptances_fold_dimreduce(proba_callback, tf.constant(content_ids), tf.constant(topics_restrict),
+                                             full_topics_d1, full_contents_d1, full_topics_d1fp, full_contents_d1fp, accept_threshold)
+        except tf.errors.ResourceExhaustedError as err:
+            acceptances = None
+        if acceptances is not None:
+            np.save(out_acceptances_folder + str(saved_num) + ".npy",
+                acceptances.numpy()
+            )
+            del acceptances
+            saved_num += 1
+            saved_lengths.append(thigh-tlow)
+
+            gc.collect()
+            # if success we update
+            tlow = thigh
+            continuous_success += 1
+            if continuous_success == 3:
+                continuous_success = 0
+                batch_size = min(batch_size + 1, max_batch_size)
+
+            if tlow - prev_tlow > 50:
+                ctime = time.time() - ctime
+                print(tlow, "completed. out of:", length, "  batch size:", batch_size, "  time used:", ctime)
+                prev_tlow = tlow
+                ctime = time.time()
+        else:
+            batch_size = max(batch_size - 1, 1)
+            max_batch_size = batch_size
+            continuous_success = 0
+        gc.collect()
+
+    ctime2 = time.time() - ctime2
+    print("Finished generating contents-topics acceptances! Time: ", ctime2)
+    return np.array(saved_lengths, dtype=np.int32)
+
+@tf.function
+def matmul_where(mat1, mat2):
+    return tf.cast(tf.where(tf.linalg.matmul(mat2, mat1, transpose_a=True, transpose_b=True) > 0.9), dtype=tf.int32)
+
+def reconstruct_tree_structure_with_acceptances(topics_restrict, contents_restrict, data_topics, saved_lengths, acceptances_folder = "contents_acceptances/",
+                                                out_topics_folder = "topics_tree/"):
+    assert (topics_restrict[1:] <= topics_restrict[:-1]).sum() == 0
+    assert (contents_restrict[1:] <= contents_restrict[:-1]).sum() == 0
+    if not os.path.exists(out_topics_folder):
+        os.mkdir(out_topics_folder)
+
+    # topic_id_to_subtree_start is (inclusive) the start indices of subtree in terms of preorder id.
+    # topic_id_to_subtree_end is (exclusive) the end indices of subtree in terms of preorder id
+    topics_inv_map, topic_id_to_subtree_start, topic_id_to_subtree_end, preorder_id_to_topic_id, useless = generate_tree_structure_information(
+        data_topics)
+    del useless
+
+    # this is a mapping from the preorder id to the topics restrict id (meaning preorder_id -> k, where
+    # topics_restrict[k] = (preorder_id -> topics_id)).
+    preorder_id_to_topics_restrict_id = np.zeros(shape=len(preorder_id_to_topic_id), dtype=np.int32)
+    left_side = np.searchsorted(topics_restrict, preorder_id_to_topic_id, side="left")
+    right_side = np.searchsorted(topics_restrict, preorder_id_to_topic_id, side="right")
+
+    preorder_id_to_topics_restrict_id[right_side > left_side] = left_side[right_side > left_side]
+    preorder_id_to_topics_restrict_id[right_side <= left_side] = len(topics_restrict)
+
+    # at most 1GB VRAM. the full matrix is len(topics_restrict) x len(data_topics), so we need to cut it up into pieces.
+    max_topic_chunk = min(268435456 // len(topics_restrict), 15000)
+    max_contents_chunk = min(268435456 // len(topics_restrict), 15000)
+
+    print("Chunk sizes: ", max_topic_chunk, " out of ", len(data_topics), "    ", max_contents_chunk, " out of ",
+          len(contents_restrict))
+
+    # we compute the tree structure correlations here
+    topic_low = 0
+    saved_partitions = np.zeros(shape=(len(data_topics)), dtype=np.int32)
+
+    while topic_low < len(data_topics):
+        print("Running ", topic_low)
+        ctime = time.time()
+
+        topic_high = min(topic_low + max_topic_chunk, len(data_topics))
+        buffer = np.zeros(shape=(len(topics_restrict), topic_high - topic_low), dtype=np.float32)
+
+        # load info into buffer
+        for topic_num_id in range(topic_low, topic_high):
+            subtree_places = preorder_id_to_topics_restrict_id[topic_id_to_subtree_start[topic_num_id]:topic_id_to_subtree_end[topic_num_id]]
+            subtree_places = subtree_places[subtree_places != len(topics_restrict)]
+            buffer[subtree_places, topic_num_id - topic_low] = 1.0
+
+        # loop through all the contents, find the content they contain
+        completed = 0
+        completed_contents_restrict = 0
+        while completed < len(saved_lengths):
+            contents_csize = saved_lengths[completed]
+            content_load_end = completed + 1
+            while (content_load_end < len(saved_lengths)) and (contents_csize + saved_lengths[content_load_end] < max_contents_chunk):
+                contents_csize += saved_lengths[content_load_end]
+                content_load_end += 1
+
+            cont_buffer = np.full(shape=(contents_csize, len(topics_restrict)), fill_value=-1.490116119384765625e-8, dtype=np.float32)
+            contents_csize = 0
+            for content_load in range(completed, content_load_end):
+                # cont_buffer[contents_csize:contents_csize+saved_lengths[content_load], :] = np.load(acceptances_folder + str(content_load) + ".npy")
+                locs = np.load(acceptances_folder + str(content_load) + ".npy")
+                if len(locs) > 0:
+                    axis1 = locs // len(topics_restrict)
+                    axis2 = locs % len(topics_restrict)
+                    cont_buffer[contents_csize + axis1, axis2] = 1.0
+                    del locs, axis1, axis2
+                else:
+                    del locs
+                contents_csize += saved_lengths[content_load]
+
+            result_tf = matmul_where(tf.constant(cont_buffer), tf.constant(buffer))
+            result = result_tf.numpy()
+            del result_tf, cont_buffer
+
+            has_cor_topics = result[:, 0]
+            has_cor_contents = result[:, 1]
+            del result
+
+            topic_mats = np.unique(has_cor_topics)
+            left = np.searchsorted(has_cor_topics, topic_mats, side="left")
+            right = np.searchsorted(has_cor_topics, topic_mats, side="right")
+
+            for k in range(len(topic_mats)):
+                topic_mat = topic_mats[k]
+
+                topic_num_id = topic_mat + topic_low
+                topic_nid_folder = out_topics_folder + "topic" + str(topic_num_id) + "/"
+                curp = saved_partitions[topic_num_id]
+                if curp == 0:
+                    os.mkdir(topic_nid_folder)
+                saved_partitions[topic_num_id] = curp + 1
+                np.save(topic_nid_folder + str(curp) + ".npy", contents_restrict[has_cor_contents[left[k]:right[k]] + completed_contents_restrict])
+
+
+            del has_cor_contents, has_cor_topics, left, right, topic_mats
+            # end of searching from [completed, content_load_end)
+            completed = content_load_end
+            completed_contents_restrict += contents_csize
+            gc.collect()
+
+        # done, we move on.
+        ctime = time.time() - ctime
+        del buffer
+
+        print("Completed topic chunk iteration", topic_low, "-", topic_high, "    Time used: ", ctime)
+        topic_low = topic_high
+
+
+    del topics_inv_map, topic_id_to_subtree_start, topic_id_to_subtree_end, preorder_id_to_topic_id, preorder_id_to_topics_restrict_id
+    try:
+        shutil.rmtree(acceptances_folder)
+    except OSError:
+        print("ERROR - unable to delete acceptances folder: ", acceptances_folder)
+
+    ctime = time.time()
+    for topic_num_id in range(len(data_topics)):
+        topic_nid_folder = out_topics_folder + "topic" + str(topic_num_id) + "/"
+        if saved_partitions[topic_num_id] > 0:
+            np.save(out_topics_folder + str(topic_num_id) + ".npy",
+                    np.sort(np.concatenate(
+                        [np.load(topic_nid_folder + str(k) + ".npy") for k in range(saved_partitions[topic_num_id])],
+                        axis=0))
+                    )
+            shutil.rmtree(topic_nid_folder)
+        if topic_num_id % 1000 == 0:
+            ctime = time.time() - ctime
+            print("Combined: ", topic_num_id, " out of ", len(data_topics), " Time:", ctime)
+            ctime = time.time()
+
+def reconstruct_tree_structure_with_acceptances_on_restriction(topics_restrict, contents_restrict,
+                                                               data_topics, saved_lengths, min_subtree_size = 2,
+                                                               acceptances_folder = "contents_acceptances/",
+                                                                out_topics_folder = "topics_tree/"):
+    assert (topics_restrict[1:] <= topics_restrict[:-1]).sum() == 0
+    assert (contents_restrict[1:] <= contents_restrict[:-1]).sum() == 0
+    if not os.path.exists(out_topics_folder):
+        os.mkdir(out_topics_folder)
+
+    # topic_id_to_subtree_start is (inclusive) the start indices of subtree in terms of preorder id.
+    # topic_id_to_subtree_end is (exclusive) the end indices of subtree in terms of preorder id
+    topics_inv_map, topic_id_to_subtree_start, topic_id_to_subtree_end, \
+        preorder_id_to_topic_id, topic_id_to_mintree_topic_id = generate_tree_structure_information(data_topics, min_subtree_size)
+
+    # this is a mapping from the preorder id to the topics restrict id (meaning preorder_id -> k, where
+    # topics_restrict[k] = (preorder_id -> topics_id)).
+    preorder_id_to_topics_restrict_id = np.zeros(shape=len(preorder_id_to_topic_id), dtype=np.int32)
+    left_side = np.searchsorted(topics_restrict, preorder_id_to_topic_id, side="left")
+    right_side = np.searchsorted(topics_restrict, preorder_id_to_topic_id, side="right")
+
+    preorder_id_to_topics_restrict_id[right_side > left_side] = left_side[right_side > left_side]
+    preorder_id_to_topics_restrict_id[right_side <= left_side] = len(topics_restrict)
+    del left_side, right_side
+
+    # at most 1GB VRAM. the full matrix is len(topics_restrict) x len(data_topics), so we need to cut it up into pieces.
+    max_topic_chunk = min(268435456 // len(topics_restrict), 15000)
+    max_contents_chunk = min(268435456 // len(topics_restrict), 15000)
+
+    unique_mintree_ids = np.unique(topic_id_to_mintree_topic_id)
+    print("Chunk sizes: ", max_topic_chunk, " out of ", len(unique_mintree_ids), "    ", max_contents_chunk, " out of ",
+          len(contents_restrict))
+
+    # we compute the tree structure correlations here
+    topic_low = 0
+    saved_partitions = np.zeros(shape=(len(unique_mintree_ids)), dtype=np.int32)
+
+    while topic_low < len(unique_mintree_ids):
+        print("Running ", topic_low)
+        ctime = time.time()
+
+        topic_high = min(topic_low + max_topic_chunk, len(unique_mintree_ids))
+        buffer = np.zeros(shape=(len(topics_restrict), topic_high - topic_low), dtype=np.float32)
+
+        # load info into buffer
+        for topic_num_mintree_id in range(topic_low, topic_high):
+            topic_num_id = unique_mintree_ids[topic_num_mintree_id]
+            subtree_places = preorder_id_to_topics_restrict_id[topic_id_to_subtree_start[topic_num_id]:topic_id_to_subtree_end[topic_num_id]]
+            subtree_places = subtree_places[subtree_places != len(topics_restrict)]
+            buffer[subtree_places, topic_num_mintree_id - topic_low] = 1.0
+
+        # loop through all the contents, find the content they contain
+        completed = 0
+        completed_contents_restrict = 0
+        while completed < len(saved_lengths):
+            contents_csize = saved_lengths[completed]
+            content_load_end = completed + 1
+            while (content_load_end < len(saved_lengths)) and (contents_csize + saved_lengths[content_load_end] < max_contents_chunk):
+                contents_csize += saved_lengths[content_load_end]
+                content_load_end += 1
+
+            cont_buffer = np.full(shape=(contents_csize, len(topics_restrict)), fill_value=-1.490116119384765625e-8, dtype=np.float32)
+            contents_csize = 0
+            for content_load in range(completed, content_load_end):
+                # cont_buffer[contents_csize:contents_csize+saved_lengths[content_load], :] = np.load(acceptances_folder + str(content_load) + ".npy")
+                locs = np.load(acceptances_folder + str(content_load) + ".npy")
+                if len(locs) > 0:
+                    axis1 = locs // len(topics_restrict)
+                    axis2 = locs % len(topics_restrict)
+                    cont_buffer[contents_csize + axis1, axis2] = 1.0
+                    del locs, axis1, axis2
+                else:
+                    del locs
+                contents_csize += saved_lengths[content_load]
+
+            result_tf = matmul_where(tf.constant(cont_buffer), tf.constant(buffer))
+            result = result_tf.numpy()
+            del result_tf, cont_buffer
+
+            has_cor_topics = result[:, 0]
+            has_cor_contents = result[:, 1]
+            del result
+
+            topic_mats = np.unique(has_cor_topics)
+            left = np.searchsorted(has_cor_topics, topic_mats, side="left")
+            right = np.searchsorted(has_cor_topics, topic_mats, side="right")
+
+            for k in range(len(topic_mats)):
+                topic_mat = topic_mats[k]
+
+                topic_num_mintree_id = topic_mat + topic_low
+                topic_num_id = unique_mintree_ids[topic_num_mintree_id]
+                topic_nid_folder = out_topics_folder + "topic" + str(topic_num_id) + "/"
+                curp = saved_partitions[topic_num_mintree_id]
+                if curp == 0:
+                    os.mkdir(topic_nid_folder)
+                saved_partitions[topic_num_mintree_id] = curp + 1
+                np.save(topic_nid_folder + str(curp) + ".npy", contents_restrict[has_cor_contents[left[k]:right[k]] + completed_contents_restrict])
+
+
+            del has_cor_contents, has_cor_topics, left, right, topic_mats
+            # end of searching from [completed, content_load_end)
+            completed = content_load_end
+            completed_contents_restrict += contents_csize
+            gc.collect()
+
+        # done, we move on.
+        ctime = time.time() - ctime
+        del buffer
+
+        print("Completed topic chunk iteration", topic_low, "-", topic_high, "    Time used: ", ctime)
+        topic_low = topic_high
+
+
+    del topics_inv_map, topic_id_to_subtree_start, topic_id_to_subtree_end, preorder_id_to_topic_id, preorder_id_to_topics_restrict_id
+    try:
+        shutil.rmtree(acceptances_folder)
+    except OSError:
+        print("ERROR - unable to delete acceptances folder: ", acceptances_folder)
+
+    ctime = time.time()
+    for topic_num_mintree_id in range(len(unique_mintree_ids)):
+        topic_num_id = unique_mintree_ids[topic_num_mintree_id]
+        topic_nid_folder = out_topics_folder + "topic" + str(topic_num_id) + "/"
+        if saved_partitions[topic_num_mintree_id] > 0:
+            np.save(out_topics_folder + str(topic_num_id) + ".npy",
+                    np.sort(np.concatenate(
+                        [np.load(topic_nid_folder + str(k) + ".npy") for k in range(saved_partitions[topic_num_mintree_id])],
+                        axis=0))
+                    )
+            shutil.rmtree(topic_nid_folder)
+        if topic_num_id % 1000 == 0:
+            ctime = time.time() - ctime
+            print("Combined: ", topic_num_id, " out of ", len(data_topics), " Time:", ctime)
+            ctime = time.time()
+
+    return topic_id_to_mintree_topic_id
+
+
+def reconstruct_topic_containings_with_acceptances(topics_restrict, contents_restrict, data_topics, saved_lengths,
+                                    acceptances_folder = "contents_acceptances/", out_containings_folder = "containings/"):
+    assert (topics_restrict[1:] <= topics_restrict[:-1]).sum() == 0
+    assert (contents_restrict[1:] <= contents_restrict[:-1]).sum() == 0
+    if not os.path.exists(out_containings_folder):
+        os.mkdir(out_containings_folder)
+
+    saved_partitions = np.zeros(shape=(len(data_topics)), dtype=np.int32)
+
+    contents_restrict_start = 0
+
+    ttopic_num_ids = np.zeros(shape=1073741824, dtype=np.int32)
+    tcontent_num_ids = np.zeros(shape=1073741824, dtype=np.int32)
+    
+    written_low = 0
+
+    ctime = time.time()
+    for k in range(len(saved_lengths)):
+        locs = np.load(acceptances_folder + str(k) + ".npy")
+        if len(locs) > 0:
+            # the axis for contents_restrict
+            axis1 = (locs // len(topics_restrict)) + contents_restrict_start
+            # the axis for topics_restrict
+            axis2 = locs % len(topics_restrict)
+            del locs
+
+            topic_num_ids = topics_restrict[axis2]
+            content_num_ids = contents_restrict[axis1]
+            del axis1, axis2
+
+            ttopic_num_ids[written_low:written_low+len(topic_num_ids)] = topic_num_ids
+            tcontent_num_ids[written_low:written_low+len(topic_num_ids)] = content_num_ids
+            written_low = written_low + len(topic_num_ids)
+            del topic_num_ids, content_num_ids
+
+        if (k % 500 == 499) or k == len(saved_lengths)-1:
+            topic_num_ids = ttopic_num_ids[:written_low]
+            content_num_ids = tcontent_num_ids[:written_low]
+            sortid = np.argsort(topic_num_ids)
+            topic_num_ids = topic_num_ids[sortid]
+            content_num_ids = content_num_ids[sortid]
+            del sortid
+            written_low = 0
+
+            unqtopics = np.unique(topic_num_ids)
+            left = np.searchsorted(topic_num_ids, unqtopics, side="left")
+            right = np.searchsorted(topic_num_ids, unqtopics, side="right")
+            for i in range(len(unqtopics)):
+                topic_contents = content_num_ids[left[i]:right[i]]
+                topic_num_id = unqtopics[i]
+
+                topic_nid_folder = out_containings_folder + "topic" + str(topic_num_id) + "/"
+                curp = saved_partitions[topic_num_id]
+                if curp == 0:
+                    os.mkdir(topic_nid_folder)
+                saved_partitions[topic_num_id] = curp + 1
+                np.save(topic_nid_folder + str(curp) + ".npy", topic_contents)
+                del topic_contents
+            del left, right, unqtopics, topic_num_ids, content_num_ids
+
+            gc.collect()
+
+            ctime = time.time() - ctime
+            print("Completed ", k, " out of ", len(saved_lengths), "    Time taken: ", ctime)
+            ctime = time.time()
+        contents_restrict_start += saved_lengths[k]
+    del ttopic_num_ids, tcontent_num_ids
+    try:
+        shutil.rmtree(acceptances_folder)
+    except OSError:
+        print("ERROR - unable to delete acceptances folder: ", acceptances_folder)
+
+    ctime = time.time()
+    for topic_num_id in range(len(data_topics)):
+        topic_nid_folder = out_containings_folder + "topic" + str(topic_num_id) + "/"
+        if saved_partitions[topic_num_id] > 0:
+            np.save(out_containings_folder + str(topic_num_id) + ".npy",
+                    np.sort(np.concatenate(
+                        [np.load(topic_nid_folder + str(k) + ".npy") for k in range(saved_partitions[topic_num_id])],
+                        axis=0))
+                    )
+            shutil.rmtree(topic_nid_folder)
+        if topic_num_id % 1000 == 0:
+            ctime = time.time() - ctime
+            print("Combined: ", topic_num_id, " out of ", len(data_topics), " Time:", ctime)
+            ctime = time.time()
+
 # in this case device must be GPU. for each content in contents_restrict, we compute the possible topics the contents
 # belong to.
 def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restrict, contents_restrict,
-                                      full_topics_data, full_contents_data, accept_threshold = 0.6,
+                                      full_topics_data, full_contents_data, accept_threshold = 0.7,
                                       init_batch_size = 10, init_max_batch_size = 30,
                                       out_contents_folder="contents_tree/", out_topics_folder="topics_tree/"):
     topics_restrict = np.sort(topics_restrict)
     contents_restrict = np.sort(contents_restrict)
-    topics_inv_map, topic_id_to_preorder_id, topic_id_to_subtree_end, preorder_id_to_topic_id = generate_tree_structure_information(
+    topics_inv_map, topic_id_to_preorder_id, topic_id_to_subtree_end, preorder_id_to_topic_id, useless = generate_tree_structure_information(
         data_topics)
+    del useless
 
     # this is a mapping from the preorder id to the topics restrict id (meaning preorder_id -> k, where
     # topics_restrict[k] = (preorder_id -> topics_id)).
@@ -261,10 +786,17 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
         content_ids = contents_restrict[np.arange(tlow, thigh)]
         probabilities = None
         try:
+            ctime3 = time.time()
             probabilities = predict_contents(proba_callback, tf.constant(content_ids), tf.constant(topics_restrict), full_topics_data,
                                          full_contents_data)
+            ctime3 = time.time() - ctime3
+            print("Predict contents time:", ctime3)
+
+            ctime3 = time.time()
             preorder_probas = preorder_correlations_from_probabilities(probabilities, thigh-tlow, len(topics_restrict),
                                                    accept_threshold, preorder_id_to_topics_restrict_id)
+            ctime3 = time.time() - ctime3
+            print("Reorder cors time:", ctime3)
         except tf.errors.ResourceExhaustedError as err:
             if probabilities is not None:
                 del probabilities
@@ -272,14 +804,21 @@ def obtain_contentwise_tree_structure(proba_callback, data_topics, topics_restri
         if preorder_probas is not None:
             probas_np = preorder_probas.numpy()
             del preorder_probas, probabilities
+
+            ctime3 = time.time()
             masked_result = np.zeros(shape=(len(data_topics), thigh-tlow), dtype=np.bool)
             for k in range(len(data_topics)):
                 masked_result[k,:] = np.any(probas_np[:, topic_id_to_preorder_id[k]:topic_id_to_subtree_end[k]], axis=1)
+            ctime3 = time.time() - ctime3
+            print("Compute mask time:", ctime3)
 
+            ctime3 = time.time()
             for k in range(tlow, thigh):
                 # masked_result = graph_mask_any(res_mask[k - tlow, :], topic_tree_mask)
                 np.save(out_contents_folder+str(contents_restrict[k])+".npy", np.where(masked_result[:, k-tlow])[0].astype(dtype=np.int32))
             del masked_result, probas_np
+            ctime3 = time.time() - ctime3
+            print("Where save time:", ctime3)
 
             gc.collect()
             # if success we update
