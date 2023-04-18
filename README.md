@@ -25,5 +25,8 @@ Repo for project for Kaggle Learning Equality 2023 Competition.
   * test_set_score.ipynb
   * Contains many models
   * Best F2 score $\sim 0.25$, precise_best_trained_on_train_eval_test under "Generate combined overshoot data"
-  
-  
+
+
+# Model pipeline
+
+![alt text](model_diagram1.png "Title")
