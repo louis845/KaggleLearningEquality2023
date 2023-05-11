@@ -3,8 +3,8 @@ def text_cleaning_subprocess():
     import pandas as pd
     import numpy as np
 
-    data_contents = pd.read_csv("/kaggle/input/learning-equality-curriculum-recommendations/content.csv", index_col=0)
-    data_topics = pd.read_csv("/kaggle/input/learning-equality-curriculum-recommendations/topics.csv", index_col=0)
+    data_contents = pd.read_csv("data/content.csv", index_col=0)
+    data_topics = pd.read_csv("data/topics.csv", index_col=0)
 
     lang_detect_model = langid.langid.LanguageIdentifier.from_modelstring(langid.langid.model, norm_probs=True)
 
@@ -219,11 +219,9 @@ def text_cleaning_subprocess():
     data_contents.to_csv("new_contents.csv")
 
 def translate_subprocess():
-    # TODO - IUNCOMMENT
     import autocorrect
     import os
     import sys
-    sys.path.insert(1, "/kaggle/input/kagglelearningequalitytranslationmodels")
     import translate_helpers
     import pandas as pd
     import numpy as np
