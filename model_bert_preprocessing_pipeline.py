@@ -2,6 +2,7 @@ def text_cleaning_subprocess():
     import langid
     import pandas as pd
     import numpy as np
+    import os
 
     data_contents = pd.read_csv("data/content.csv", index_col=0)
     data_topics = pd.read_csv("data/topics.csv", index_col=0)
@@ -215,8 +216,11 @@ def text_cleaning_subprocess():
 
     preprocess_before_translation()
 
-    data_topics.to_csv("new_topics.csv")
-    data_contents.to_csv("new_contents.csv")
+    if not os.path.isdir("generated_data/"):
+        os.mkdir("generated_data/")
+
+    data_topics.to_csv("generated_data/new_topics.csv")
+    data_contents.to_csv("generated_data/new_contents.csv")
 
 def translate_subprocess():
     import autocorrect
@@ -228,8 +232,8 @@ def translate_subprocess():
     import gc
     import time
 
-    data_topics = pd.read_csv("new_topics.csv", index_col=0)
-    data_contents = pd.read_csv("new_contents.csv", index_col=0)
+    data_topics = pd.read_csv("generated_data/new_topics.csv", index_col=0)
+    data_contents = pd.read_csv("generated_data/new_contents.csv", index_col=0)
 
     def translate_languages(batch_size=1000):
         # -------------- detect actual languages --------------
@@ -279,7 +283,7 @@ def translate_subprocess():
         total_text = pd.DataFrame(index=np.arange(2 * len(contents_lang) + 2 * len(topics_lang)),
                                   data={"lang": mlang, "text": mtext})
 
-        total_text.to_csv("total_text_before_translate.csv")
+        total_text.to_csv("generated_data/total_text_before_translate.csv")
 
         # -------------- do translation here --------------
 
@@ -361,8 +365,8 @@ def translate_subprocess():
     data_topicsn = data_topics.join(topics_translated[["description", "title"]], rsuffix="_translate")
     data_contentsn = data_contents.join(contents_translated[["description", "title"]], rsuffix="_translate")
 
-    os.remove("new_topics.csv")
-    os.remove("new_contents.csv")
+    os.remove("generated_data/new_topics.csv")
+    os.remove("generated_data/new_contents.csv")
 
-    data_topicsn.to_csv("new_topics.csv")
-    data_contentsn.to_csv("new_contents.csv")
+    data_topicsn.to_csv("generated_data/new_topics.csv")
+    data_contentsn.to_csv("generated_data/new_contents.csv")

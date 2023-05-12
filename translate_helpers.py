@@ -74,3 +74,9 @@ def obtain_language_info(dframe):
         description_lang[k] = description
         title_lang[k] = title
     return pd.DataFrame(data={"description_lang": description_lang, "title_lang": title_lang}, index=dframe.index)
+
+if __name__ == "__main__":
+    for lang in list_available_langs():
+        print(lang)
+        translate_info = load_model(lang)
+        del translate_info

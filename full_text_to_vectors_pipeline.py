@@ -43,8 +43,8 @@ if __name__ == "__main__":
     del p
     print_memory()
 
-    data_topics = pd.read_csv("new_topics.csv", index_col=0)
-    data_contents = pd.read_csv("new_contents.csv", index_col=0)
+    data_topics = pd.read_csv("generated_data/new_topics.csv", index_col=0)
+    data_contents = pd.read_csv("generated_data/new_contents.csv", index_col=0)
     print("After loading memory:")
     print_memory()
 
@@ -63,10 +63,10 @@ if __name__ == "__main__":
     contents_lang_one_hot2 = pd.DataFrame(
         {lang: (data_contents["language"] == lang).astype(dtype=float) for lang in languages2})
 
-    np.save("topics_lang_train.npy", topics_lang_one_hot.to_numpy())
-    np.save("topics_lang_total.npy", topics_lang_one_hot2.to_numpy())
-    np.save("contents_lang_train.npy", contents_lang_one_hot.to_numpy())
-    np.save("contents_lang_total.npy", contents_lang_one_hot2.to_numpy())
+    np.save("generated_data/topics_lang_train.npy", topics_lang_one_hot.to_numpy())
+    np.save("generated_data/topics_lang_total.npy", topics_lang_one_hot2.to_numpy())
+    np.save("generated_data/contents_lang_train.npy", contents_lang_one_hot.to_numpy())
+    np.save("generated_data/contents_lang_total.npy", contents_lang_one_hot2.to_numpy())
 
     del topics_lang_one_hot, topics_lang_one_hot2, contents_lang_one_hot, contents_lang_one_hot2
 
@@ -102,7 +102,7 @@ if __name__ == "__main__":
     def sbert_direct_vectorize_and_save_translate(series, name):
         has_content_mask = (~(series.isnull() | series.apply(lambda x: type(x) == str and x == ""))).to_numpy()
         series = series.fillna("")
-        dirs = ["mininet_L6_english384/", "mininet_L12_english384/"]
+        dirs = ["generated_data/mininet_L6_english384/", "generated_data/mininet_L12_english384/"]
         for mdir in dirs:
             if not os.path.isdir(mdir):
                 os.mkdir(mdir)
@@ -116,7 +116,7 @@ if __name__ == "__main__":
         ctime = time.time() - ctime
         print("Time elapsed: ", ctime, "  for ", name, " mininet384_L12")
 
-        np.save("mininet_L12_english384/" + name + ".npy", mininet384_L12)
+        np.save("generated_data/mininet_L12_english384/" + name + ".npy", mininet384_L12)
         del mininet384_L12, series, sentences
 
         return has_content_mask
@@ -140,7 +140,7 @@ if __name__ == "__main__":
                 mstr = " ".join(mtokens[:50])
             text_list[k] = mstr
 
-        dirs = ["mpnet_english_finetuned_on_train/", "mpnet_english_full/"]
+        dirs = ["generated_data/mpnet_english_finetuned_on_train/"]
         for mdir in dirs:
             if not os.path.isdir(mdir):
                 os.mkdir(mdir)
@@ -152,7 +152,7 @@ if __name__ == "__main__":
         finevectors = mpnet_english_finetuned_on_train.encode(sentences)
         ctime = time.time() - ctime
         print("Time elapsed: ", ctime, "  for ", name, " mpnet_english_finetuned_on_train")
-        np.save("mpnet_english_finetuned_on_train/" + name + ".npy", finevectors)
+        np.save("generated_data/mpnet_english_finetuned_on_train/" + name + ".npy", finevectors)
         del finevectors, sentences, text_list
 
 

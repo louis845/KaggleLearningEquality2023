@@ -1,1 +1,1 @@
-resources_path = "data/opus_translation_models/"
+resources_path = "data/ct2_models_from_opus/"

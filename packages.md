@@ -20,7 +20,7 @@ These packages are used for translation (to English), and pretrained transformer
     * WordNet
     * averaged_perceptron_tagger
 * Currently used packages (BERT):
-  * BERT transformer model https://www.tensorflow.org/text/tutorials/classify_text_with_bert
+  * sentence-transformers
   * Opus-MT pretrained models https://github.com/Helsinki-NLP/Opus-MT-train/tree/master/models (Creative Commons Attribution 4.0)
   * ctranslate2 2.24.0 https://github.com/OpenNMT/CTranslate2/blob/master/LICENSE (MIT License)
   * sentencepiece 0.1.97 https://github.com/google/sentencepiece (Apache License 2.0)
