@@ -8,7 +8,6 @@ import sentence_transformers
 import collections
 import multiprocessing
 
-
 import model_bert_preprocessing_pipeline
 
 current_process = psutil.Process(os.getpid())
