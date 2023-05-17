@@ -5,6 +5,7 @@
  * data/correlations.csv
  * data/temp_channel_components.json
  * data/temp_topics_trees_contents.json
+ * data/bert_tokens/*
  * If full_text_to_vectors_pipeline.py is used
    * data/ct2_models_from_opus/*
  * Otherwise

@@ -88,7 +88,7 @@ def compute_neighbors_text_embeddings(topics_file="topics_reduced_isomap_48.npy"
     # Compute neighbors embeddings
     topics_neighbors_embeddings = np.zeros((topics_reduced_embeddings.shape[0], 768), dtype=np.float32)
 
-    if neighbors is not None:
+    if neighbors is None:
         neighbors = NeighborMap()
         neighbors.initiate()
         for k in range(3):
@@ -96,7 +96,7 @@ def compute_neighbors_text_embeddings(topics_file="topics_reduced_isomap_48.npy"
 
     reduced_embeddings_mean = np.mean(topics_reduced_embeddings, axis=0)
     for i in range(topics_reduced_embeddings.shape[0]):
-        if i % 100 == 0:
+        if i % 10000 == 0:
             print("Computing neighbors for topic ", i)
         # Iteratively fill the array. The first reduced_dim values are the original reduced embedding (by PCA/isomap etc).
         # The remaining values are the reduced embeddings of neighbors wrt the graph. Precedence is given to closer neighbors.
@@ -132,9 +132,15 @@ def compute_neighbors_text_embeddings(topics_file="topics_reduced_isomap_48.npy"
 
 
 if __name__ == "__main__":
+    print("Computing full embeddings for isomap reduction with 16 neighbors")
     compute_neighbors_text_embeddings("topics_reduced_isomap_48.npy", "topics_neighbors_{}_{}.npy".format("isomap", 16))
+    print("Computing full embeddings for isomap reduction with 8 neighbors")
     compute_neighbors_text_embeddings("topics_reduced_isomap_96.npy", "topics_neighbors_{}_{}.npy".format("isomap", 8))
+    print("Computing full embeddings for isomap reduction with 4 neighbors")
     compute_neighbors_text_embeddings("topics_reduced_isomap_192.npy", "topics_neighbors_{}_{}.npy".format("isomap", 4))
+    print("Computing full embeddings for pca reduction with 16 neighbors")
     compute_neighbors_text_embeddings("topics_reduced_pca_48.npy", "topics_neighbors_{}_{}.npy".format("pca", 16))
+    print("Computing full embeddings for pca reduction with 8 neighbors")
     compute_neighbors_text_embeddings("topics_reduced_pca_96.npy", "topics_neighbors_{}_{}.npy".format("pca", 8))
+    print("Computing full embeddings for pca reduction with 4 neighbors")
     compute_neighbors_text_embeddings("topics_reduced_pca_192.npy", "topics_neighbors_{}_{}.npy".format("pca", 4))
