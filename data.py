@@ -7,9 +7,9 @@ import pandas as pd
 import numpy as np
 import config
 
-contents = pd.read_csv(config.resources_path + "contents_translate.csv", index_col = 0)
+contents = pd.read_csv("generated_data/new_contents.csv", index_col = 0)
 correlations = pd.read_csv(config.resources_path + "correlations.csv", index_col = 0)
-topics = pd.read_csv(config.resources_path + "topics_translate.csv", index_col = 0)
+topics = pd.read_csv("generated_data/new_topics.csv", index_col = 0)
 
 # find the unique ids for trees
 topic_trees_id_list = list(topics["channel"].value_counts().index)
