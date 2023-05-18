@@ -1,0 +1,27 @@
+Model,Best accuracy (over noise)
+No neighbors best model,0.880902099609375
+No neighbors final epoch,0.889752197265625
+isomap 4 similar best model,0.886993408203125
+isomap 4 similar final epoch,0.889727783203125
+isomap 4 dissimilar best model,0.877423095703125
+isomap 4 dissimilar final epoch,0.888006591796875
+isomap 8 similar best model,0.883367919921875
+isomap 8 similar final epoch,0.892779541015625
+isomap 8 dissimilar best model,0.880841064453125
+isomap 8 dissimilar final epoch,0.892779541015625
+isomap 16 similar best model,0.887054443359375
+isomap 16 similar final epoch,0.894097900390625
+isomap 16 dissimilar best model,0.89014892578125
+isomap 16 dissimilar final epoch,0.894305419921875
+pca 4 similar best model,0.903033447265625
+pca 4 similar final epoch,0.90789794921875
+pca 4 dissimilar best model,0.901763916015625
+pca 4 dissimilar final epoch,0.910491943359375
+pca 8 similar best model,0.898455810546875
+pca 8 similar final epoch,0.909783935546875
+pca 8 dissimilar best model,0.90294189453125
+pca 8 dissimilar final epoch,0.9082763671875
+pca 16 similar best model,0.9013671875
+pca 16 similar final epoch,0.90631103515625
+pca 16 dissimilar best model,0.90250244140625
+pca 16 dissimilar final epoch,0.90736083984375

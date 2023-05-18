@@ -63,9 +63,9 @@ def ltsa_embedding_plot(data_folder="generated_data", data_to_convert="mininet_L
     for n_components in components:
         errors = np.zeros(shape=5, dtype=np.float32)
         ctime = time.time()
-        for k in range(5):
-            ltsa = sklearn.manifold.LocallyLinearEmbedding(n_components=n_components, n_neighbors=max(20, n_components), method="ltsa", n_jobs=-1)
-            topics_data_sampled = topics_data[rng.choice(topics_data.shape[0], 10000, replace=False), :]
+        for k in range(3):
+            ltsa = sklearn.manifold.LocallyLinearEmbedding(n_components=n_components, n_neighbors=n_components*2, method="ltsa", n_jobs=4)
+            topics_data_sampled = topics_data[rng.choice(topics_data.shape[0], 5000, replace=False), :]
             ltsa.fit(topics_data_sampled)
             errors[k] = ltsa.reconstruction_error_
             del ltsa, topics_data_sampled

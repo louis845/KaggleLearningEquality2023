@@ -69,7 +69,7 @@ class NeighborMap():
         return self.distances[distance - 2][node_id]
 
 neighbors = None
-def compute_neighbors_text_embeddings(topics_file="topics_reduced_isomap_48.npy", out_file="topics_neighbors_embeddings.npy"):
+def compute_neighbors_text_embeddings(topics_file="topics_reduced_isomap_48.npy", out_file="topics_neighbors_embeddings.npy", similar=True):
     """
     Compute the neighbors embeddings for the text embeddings.
     """
@@ -119,8 +119,12 @@ def compute_neighbors_text_embeddings(topics_file="topics_reduced_isomap_48.npy"
             sort = np.argsort(dist_squared)
 
             fill_values_end = min(filled_values + len(sort), n_neighbors)
-            topics_neighbors_embeddings[i, reduced_dim * filled_values:reduced_dim * fill_values_end]\
-                = topics_reduced_embeddings[neighbors_list_np[sort[:fill_values_end - filled_values]], :].flatten()
+            if similar:
+                topics_neighbors_embeddings[i, reduced_dim * filled_values:reduced_dim * fill_values_end]\
+                    = topics_reduced_embeddings[neighbors_list_np[sort[:fill_values_end - filled_values]], :].flatten()
+            else:
+                topics_neighbors_embeddings[i, reduced_dim * filled_values:reduced_dim * fill_values_end] \
+                    = topics_reduced_embeddings[neighbors_list_np[sort[filled_values - fill_values_end:]], :].flatten()
             filled_values = fill_values_end
             distance += 1
 
@@ -133,14 +137,27 @@ def compute_neighbors_text_embeddings(topics_file="topics_reduced_isomap_48.npy"
 
 if __name__ == "__main__":
     print("Computing full embeddings for isomap reduction with 16 neighbors")
-    compute_neighbors_text_embeddings("topics_reduced_isomap_48.npy", "topics_neighbors_{}_{}.npy".format("isomap", 16))
+    compute_neighbors_text_embeddings("topics_reduced_isomap_48.npy", "topics_neighbors_{}_{}_{}.npy".format("isomap", 16, "similar"), similar=True)
     print("Computing full embeddings for isomap reduction with 8 neighbors")
-    compute_neighbors_text_embeddings("topics_reduced_isomap_96.npy", "topics_neighbors_{}_{}.npy".format("isomap", 8))
+    compute_neighbors_text_embeddings("topics_reduced_isomap_96.npy", "topics_neighbors_{}_{}_{}.npy".format("isomap", 8, "similar"), similar=True)
     print("Computing full embeddings for isomap reduction with 4 neighbors")
-    compute_neighbors_text_embeddings("topics_reduced_isomap_192.npy", "topics_neighbors_{}_{}.npy".format("isomap", 4))
+    compute_neighbors_text_embeddings("topics_reduced_isomap_192.npy", "topics_neighbors_{}_{}_{}.npy".format("isomap", 4, "similar"), similar=True)
+    print("Computing full embeddings for isomap reduction with 16 neighbors")
+    compute_neighbors_text_embeddings("topics_reduced_isomap_48.npy", "topics_neighbors_{}_{}_{}.npy".format("isomap", 16, "dissimilar"), similar=False)
+    print("Computing full embeddings for isomap reduction with 8 neighbors")
+    compute_neighbors_text_embeddings("topics_reduced_isomap_96.npy", "topics_neighbors_{}_{}_{}.npy".format("isomap", 8, "dissimilar"), similar=False)
+    print("Computing full embeddings for isomap reduction with 4 neighbors")
+    compute_neighbors_text_embeddings("topics_reduced_isomap_192.npy", "topics_neighbors_{}_{}_{}.npy".format("isomap", 4, "dissimilar"), similar=False)
+
     print("Computing full embeddings for pca reduction with 16 neighbors")
-    compute_neighbors_text_embeddings("topics_reduced_pca_48.npy", "topics_neighbors_{}_{}.npy".format("pca", 16))
+    compute_neighbors_text_embeddings("topics_reduced_pca_48.npy", "topics_neighbors_{}_{}_{}.npy".format("pca", 16, "similar"), similar=True)
     print("Computing full embeddings for pca reduction with 8 neighbors")
-    compute_neighbors_text_embeddings("topics_reduced_pca_96.npy", "topics_neighbors_{}_{}.npy".format("pca", 8))
+    compute_neighbors_text_embeddings("topics_reduced_pca_96.npy", "topics_neighbors_{}_{}_{}.npy".format("pca", 8, "similar"), similar=True)
     print("Computing full embeddings for pca reduction with 4 neighbors")
-    compute_neighbors_text_embeddings("topics_reduced_pca_192.npy", "topics_neighbors_{}_{}.npy".format("pca", 4))
+    compute_neighbors_text_embeddings("topics_reduced_pca_192.npy", "topics_neighbors_{}_{}_{}.npy".format("pca", 4, "similar"), similar=True)
+    print("Computing full embeddings for pca reduction with 16 neighbors")
+    compute_neighbors_text_embeddings("topics_reduced_pca_48.npy", "topics_neighbors_{}_{}_{}.npy".format("pca", 16, "dissimilar"), similar=False)
+    print("Computing full embeddings for pca reduction with 8 neighbors")
+    compute_neighbors_text_embeddings("topics_reduced_pca_96.npy", "topics_neighbors_{}_{}_{}.npy".format("pca", 8, "dissimilar"), similar=False)
+    print("Computing full embeddings for pca reduction with 4 neighbors")
+    compute_neighbors_text_embeddings("topics_reduced_pca_192.npy", "topics_neighbors_{}_{}_{}.npy".format("pca", 4, "dissimilar"), similar=False)
